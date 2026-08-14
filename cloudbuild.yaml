@@ -18,7 +18,7 @@ steps:
       - gs://${_BUCKET_NAME}
 
 substitutions:
-  _BUCKET_NAME: REPLACE_WITH_YOUR_BUCKET_NAME
+  _BUCKET_NAME: synode-trellis-iframe
 
 options:
   logging: CLOUD_LOGGING_ONLY
