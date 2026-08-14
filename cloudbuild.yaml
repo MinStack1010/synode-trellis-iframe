@@ -1,0 +1,35 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag=${_AR_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+      - --build-arg=TRELLIS_API_URL=${_TRELLIS_API_URL}
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_AR_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_AR_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated
+      - --timeout=900
+
+substitutions:
+  _AR_LOCATION: northamerica-northeast1
+  _REPOSITORY: cloud-run-source-deploy
+  _IMAGE: trellis-iframe
+  _SERVICE: synode-trellis-iframe
+  _REGION: northamerica-northeast1
+  _TRELLIS_API_URL: /trellis-api
+
+options:
+  logging: CLOUD_LOGGING_ONLY
