@@ -3,8 +3,8 @@
 		<app-header />
 		<v-container fluid class="workspace pa-0">
 			<v-row no-gutters class="workspace-row">
-				<v-col cols="12" lg="3" xl="3" class="control-column">
-					<aside class="control-panel pa-4 pa-md-6">
+				<v-col cols="12" lg="3" xl="3" class="control-column d-flex">
+					<aside class="control-panel w-100 pa-4 pa-md-6">
 						<div class="eyebrow">
 							{{ $t("image3d.eyebrow") }}
 						</div>
@@ -138,15 +138,14 @@
 					</aside>
 				</v-col>
 
-				<v-col cols="12" lg="9" xl="9" class="preview-column">
-					<section class="preview-panel">
+				<v-col cols="12" lg="9" xl="9" class="preview-column d-flex">
+					<section class="preview-panel w-100">
 						<v-row
 							no-gutters
-							class="preview-toolbar px-4 py-3 px-md-6 py-md-3"
+							class="preview-toolbar align-center justify-space-between px-4 py-3 px-md-6 py-md-3"
 						>
 							<v-col
-								cols="12"
-								sm="auto"
+								cols="auto"
 								class="preview-tabs-column"
 							>
 								<div class="preview-tabs d-flex">
@@ -168,8 +167,7 @@
 							</v-col>
 
 							<v-col
-								cols="12"
-								sm="auto"
+								cols="auto"
 								class="tool-actions-column"
 							>
 								<div class="tool-actions d-flex">
@@ -290,12 +288,12 @@
 			@click.self="advancedOpen = false"
 		>
 			<section
-				class="advanced-modal"
+				class="advanced-modal d-flex flex-column"
 				role="dialog"
 				aria-modal="true"
 				:aria-label="$t('image3d.advanced')"
 			>
-				<header>
+				<header class="d-flex align-start justify-space-between">
 					<div>
 						<span class="eyebrow">TRELLIS.2 · 4B</span>
 
@@ -342,7 +340,7 @@
 					</div>
 				</div>
 
-				<footer>
+				<footer class="d-flex justify-end">
 					<v-btn
 						type="button"
 						class="secondary"
@@ -365,7 +363,7 @@
 		<transition name="toast">
 			<div
 				v-if="toastMessage"
-				class="app-toast"
+				class="app-toast d-flex align-center"
 				role="status"
 			>
 				<span>✓</span>

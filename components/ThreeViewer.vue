@@ -1,6 +1,6 @@
 <template>
     <div ref="viewport" class="glb-viewport">
-        <div v-if="!modelUrl" class="viewer-empty">
+        <div v-if="!modelUrl" class="viewer-empty d-flex flex-column align-center">
             <span class="viewer-cube">◇</span>
             <strong>{{ $t("image3d.viewerTitle") }}</strong>
             <p>{{ $t("image3d.viewerText") }}</p>

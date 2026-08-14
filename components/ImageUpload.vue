@@ -4,8 +4,8 @@
             @click="openPicker" @keydown.enter.prevent="openPicker" @dragenter.prevent="dragging = true"
             @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="onDrop">
             <img v-if="preview" :src="preview" :alt="$t('image3d.selectedSource')" class="upload-preview" />
-            <div v-else class="upload-empty">
-                <span class="upload-icon"><v-icon color="grey" size="22">mdi-upload</v-icon></span>
+            <div v-else class="upload-empty d-flex flex-column align-center">
+                <span class="upload-icon d-flex align-center justify-center"><v-icon color="grey" size="22">mdi-upload</v-icon></span>
                 <strong>{{ $t("image3d.drop") }}</strong>
                 <div class="text-subtitle-2">{{ $t("image3d.formats") }}</div>
             </div>
