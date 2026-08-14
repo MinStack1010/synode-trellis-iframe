@@ -1,0 +1,22 @@
+{
+  "name": "synode-trellis-iframe",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "nuxt",
+    "build": "nuxt build",
+    "start": "nuxt start",
+    "generate": "nuxt generate"
+  },
+  "dependencies": {
+    "@nuxtjs/i18n": "^7.2.0",
+    "nuxt": "^2.18.1",
+    "vue": "^2.7.16",
+    "three": "^0.173.0",
+    "vue-server-renderer": "^2.7.16",
+    "vuetify": "^2.7.2"
+  },
+  "devDependencies": {
+    "@nuxtjs/vuetify": "^1.12.3"
+  }
+}
