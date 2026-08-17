@@ -22,11 +22,11 @@ steps:
       - --allow-unauthenticated
 
 substitutions:
-  _AR_LOCATION: asia-southeast1
-  _REPOSITORY: synode
+  _AR_LOCATION: northamerica-northeast1
+  _REPOSITORY: cloud-run-source-deploy
   _IMAGE: trellis-iframe
   _SERVICE: synode-trellis-iframe
-  _REGION: asia-southeast1
+  _REGION: northamerica-northeast1
 
 options:
   logging: CLOUD_LOGGING_ONLY
