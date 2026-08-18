@@ -131,10 +131,20 @@
 						>
 							{{
 								generating
-									? $t("image3d.generating")
+									? $t("image3d.generating", { progress: generationProgress })
 									: $t("image3d.generate")
 							}}
 						</v-btn>
+
+						<div v-if="generating" class="generation-progress mt-3" role="status" aria-live="polite">
+							<div class="d-flex align-center justify-space-between mb-1">
+								<span>{{ generationStage || $t("image3d.waitingForGpu") }}</span>
+								<strong>{{ generationProgress }}%</strong>
+							</div>
+							<div class="generation-progress__track">
+								<div class="generation-progress__bar" :style="{ width: `${generationProgress}%` }" />
+							</div>
+						</div>
 					</aside>
 				</v-col>
 
@@ -383,7 +393,7 @@ export default {
 	components: { AppHeader, ImageUpload, ThreeViewer },
 	data() {
 			return {
-						hasImage: false, selectedFile: null, generating: false, generated: false, seed: "284739", texture: "2048 px", decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: ["1024 px", "2048 px", "4096 px"], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
+						hasImage: false, selectedFile: null, generating: false, generationProgress: 0, generationStage: "", generated: false, seed: "284739", texture: "2048 px", decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: ["1024 px", "2048 px", "4096 px"], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
 			advancedOpen: false, exportOpen: false, publishOpen: false, modelUrl: "", settingsApplied: false, toastMessage: "", toastTimer: null,
 			advanced: { sparseGuidance: 7.5, sparseRescale: .7, sparseSteps: 12, sparseT: 5, shapeGuidance: 7.5, shapeRescale: .5, shapeSteps: 12, shapeT: 3, materialGuidance: 1, materialRescale: 0, materialSteps: 12, materialT: 3 },
 			advancedStages: [
@@ -415,11 +425,13 @@ export default {
 			}
 
 			this.generating = true;
+			this.generationProgress = 0;
+			this.generationStage = this.$t("image3d.waitingForGpu");
 			this.generated = false;
 			if (this.randomizeSeed) this.seed = Math.floor(Math.random() * 4294967295).toString();
 
 			try {
-				const response = await fetch(`${apiUrl}/generate`, {
+				const response = await fetch(`${apiUrl}/generate/jobs`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
@@ -442,18 +454,69 @@ export default {
 						tex_slat_rescale_t: this.advanced.materialT
 					})
 				});
-				const result = await response.json();
-				if (!response.ok) throw new Error(result.detail || "Generation failed");
+				const job = await response.json();
+				if (!response.ok) throw new Error(job.detail || "Generation failed");
+
+				const completedJob = await this.waitForGenerationJob(apiUrl, job.job_id);
+				const glb = await this.downloadGenerationResult(apiUrl, job.job_id);
 
 				if (this.modelUrl) URL.revokeObjectURL(this.modelUrl);
-				this.modelUrl = this.base64ToObjectUrl(result.glb, "model/gltf-binary");
+				this.modelUrl = URL.createObjectURL(glb);
 				this.generated = true;
-				this.showToast(this.$t("image3d.generatedSuccess", { seconds: result.generation_time }));
+				this.showToast(this.$t("image3d.generatedSuccess", { seconds: completedJob.result.generation_time }));
 			} catch (error) {
 				this.showToast(error.message || this.$t("image3d.generationFailed"));
 			} finally {
 				this.generating = false;
 			}
+		},
+		async waitForGenerationJob(apiUrl, jobId) {
+			while (true) {
+				const response = await fetch(`${apiUrl}/generate/jobs/${encodeURIComponent(jobId)}`);
+				const job = await response.json();
+				if (!response.ok) throw new Error(job.detail || "Unable to read generation progress");
+
+				this.generationProgress = Math.max(0, Math.min(100, Number(job.progress) || 0));
+				this.generationStage = job.stage || "";
+
+				if (job.status === "completed") return job;
+				if (job.status === "failed") throw new Error(job.detail || this.$t("image3d.generationFailed"));
+				await new Promise(resolve => window.setTimeout(resolve, 750));
+			}
+		},
+		async downloadGenerationResult(apiUrl, jobId) {
+			this.generationProgress = 98;
+			this.generationStage = this.$t("image3d.downloadingGlb", { downloaded: "0 B", total: "…" });
+			const response = await fetch(`${apiUrl}/generate/jobs/${encodeURIComponent(jobId)}/result`);
+			if (!response.ok) {
+				const error = await response.json();
+				throw new Error(error.detail || "Unable to download the generated GLB");
+			}
+
+			const totalBytes = Number(response.headers.get("content-length")) || 0;
+			if (!response.body || !totalBytes) {
+				const glb = await response.blob();
+				this.generationProgress = 100;
+				return glb;
+			}
+
+			const reader = response.body.getReader();
+			const chunks = [];
+			let downloadedBytes = 0;
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				chunks.push(value);
+				downloadedBytes += value.byteLength;
+				this.generationProgress = Math.min(99, 98 + Math.floor((downloadedBytes / totalBytes) * 2));
+				this.generationStage = this.$t("image3d.downloadingGlb", { downloaded: this.formatBytes(downloadedBytes), total: this.formatBytes(totalBytes) });
+			}
+			this.generationProgress = 100;
+			return new Blob(chunks, { type: "model/gltf-binary" });
+		},
+		formatBytes(bytes) {
+			if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+			return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 		},
 		downloadGlb() {
 			this.exportOpen = false;

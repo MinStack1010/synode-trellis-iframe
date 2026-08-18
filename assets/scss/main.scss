@@ -164,6 +164,10 @@ body, .v-application {
 .advanced small { margin-left: 6px; color: #31846a; font-size: 10px; }
 .generate { border-radius: 8px !important; color: #fff !important; background: var(--primary) !important; font-size: 13px; font-weight: 600; }
 .generate.v-btn--disabled, .generate:disabled { color: #d0d2d5 !important; background: #f0f0f1 !important; opacity: 1; }
+.generation-progress { color: #60656d; font-size: 11px; }
+.generation-progress strong { color: #292c31; font-variant-numeric: tabular-nums; }
+.generation-progress__track { height: 6px; overflow: hidden; border-radius: 99px; background: #e7eaed; }
+.generation-progress__bar { height: 100%; border-radius: inherit; background: #31846a; transition: width .25s ease; }
 
 .preview-column { min-width: 0; }
 .preview-panel { position: relative; width: 100%; min-width: 0; min-height: calc(100vh - 56px); background: var(--canvas); }
