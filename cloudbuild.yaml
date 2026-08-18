@@ -28,7 +28,7 @@ substitutions:
   _IMAGE: trellis-iframe
   _SERVICE: synode-trellis-iframe
   _REGION: northamerica-northeast1
-  _TRELLIS_API_URL: http://34.42.10.21:8080
+  _TRELLIS_API_URL: /trellis-api
 
 options:
   logging: CLOUD_LOGGING_ONLY
