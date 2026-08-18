@@ -2,7 +2,7 @@ const http = require("http");
 
 // Used only by `nuxt dev`. Production requests use the matching Nginx proxy.
 const upstream = new URL(
-    process.env.TRELLIS_PROXY_TARGET || "http://35.238.30.208:58203"
+    process.env.TRELLIS_PROXY_TARGET || "http://34.42.10.21:8080"
 );
 
 module.exports = (request, response) => {
