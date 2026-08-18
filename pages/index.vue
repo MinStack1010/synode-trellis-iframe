@@ -17,7 +17,7 @@
 							{{ $t("image3d.description") }}
 						</p>
 
-						<image-upload @changed="hasImage = true" />
+						<image-upload @changed="onImageChanged" />
 
 						<v-divider class="my-5" />
 
@@ -68,13 +68,13 @@
 							</v-col>
 
 							<v-col cols="12" sm="6" class="pa-1">
-								<v-text-field
+								<v-select
+									v-model="decimationTarget"
 									outlined
 									dense
 									hide-details
-									readonly
 									:label="$t('image3d.glbTarget')"
-									:value="$t('image3d.faces', { count: '500,000' })"
+									:items="decimationOptions"
 								/>
 							</v-col>
 
@@ -382,8 +382,8 @@ export default {
 	name: "ImageTo3DPage",
 	components: { AppHeader, ImageUpload, ThreeViewer },
 	data() {
-		return {
-			hasImage: false, generating: false, generated: false, seed: "284739", texture: "2048 px", output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: ["1024 px", "2048 px", "4096 px"], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
+			return {
+						hasImage: false, selectedFile: null, generating: false, generated: false, seed: "284739", texture: "2048 px", decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: ["1024 px", "2048 px", "4096 px"], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
 			advancedOpen: false, exportOpen: false, publishOpen: false, modelUrl: "", settingsApplied: false, toastMessage: "", toastTimer: null,
 			advanced: { sparseGuidance: 7.5, sparseRescale: .7, sparseSteps: 12, sparseT: 5, shapeGuidance: 7.5, shapeRescale: .5, shapeSteps: 12, shapeT: 3, materialGuidance: 1, materialRescale: 0, materialSteps: 12, materialT: 3 },
 			advancedStages: [
@@ -394,6 +394,10 @@ export default {
 		};
 	},
 	methods: {
+		onImageChanged(file) {
+			this.selectedFile = file;
+			this.hasImage = Boolean(file);
+		},
 		openExtract() {
 			if (this.generated) this.exportOpen = true;
 		},
@@ -402,14 +406,82 @@ export default {
 			this.exportOpen = menu === "export" && !isOpen;
 			this.publishOpen = menu === "publish" && !isOpen;
 		},
-		generate() {
+		async generate() {
+			if (!this.selectedFile) return;
+			const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
+			if (!apiUrl) {
+				this.showToast(this.$t("image3d.apiNotConfigured"));
+				return;
+			}
+
 			this.generating = true;
+			this.generated = false;
 			if (this.randomizeSeed) this.seed = Math.floor(Math.random() * 4294967295).toString();
-			window.setTimeout(() => { this.generating = false; this.generated = true; }, 700);
+
+			try {
+				const response = await fetch(`${apiUrl}/generate`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						image: await this.fileToBase64(this.selectedFile),
+						seed: Number(this.seed) || 0,
+						pipeline_type: this.resolution === "512" ? "512" : `${this.resolution}_cascade`,
+						decimation_target: this.decimationTarget,
+						texture_size: Number.parseInt(this.texture, 10),
+						ss_guidance_strength: this.advanced.sparseGuidance,
+						ss_guidance_rescale: this.advanced.sparseRescale,
+						ss_sampling_steps: this.advanced.sparseSteps,
+						ss_rescale_t: this.advanced.sparseT,
+						shape_slat_guidance_strength: this.advanced.shapeGuidance,
+						shape_slat_guidance_rescale: this.advanced.shapeRescale,
+						shape_slat_sampling_steps: this.advanced.shapeSteps,
+						shape_slat_rescale_t: this.advanced.shapeT,
+						tex_slat_guidance_strength: this.advanced.materialGuidance,
+						tex_slat_guidance_rescale: this.advanced.materialRescale,
+						tex_slat_sampling_steps: this.advanced.materialSteps,
+						tex_slat_rescale_t: this.advanced.materialT
+					})
+				});
+				const result = await response.json();
+				if (!response.ok) throw new Error(result.detail || "Generation failed");
+
+				if (this.modelUrl) URL.revokeObjectURL(this.modelUrl);
+				this.modelUrl = this.base64ToObjectUrl(result.glb, "model/gltf-binary");
+				this.generated = true;
+				this.showToast(this.$t("image3d.generatedSuccess", { seconds: result.generation_time }));
+			} catch (error) {
+				this.showToast(error.message || this.$t("image3d.generationFailed"));
+			} finally {
+				this.generating = false;
+			}
 		},
 		downloadGlb() {
 			this.exportOpen = false;
-			if (this.modelUrl) window.open(this.modelUrl, "_blank");
+			if (!this.modelUrl) {
+				this.showToast(this.$t("image3d.generateBeforeExport"));
+				return;
+			}
+			const link = document.createElement("a");
+			link.href = this.modelUrl;
+			link.download = "trellis2-model.glb";
+			link.style.display = "none";
+			document.body.appendChild(link);
+			link.click();
+			link.remove();
+		},
+		fileToBase64(file) {
+			return new Promise((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onload = () => resolve(reader.result.split(",")[1]);
+				reader.onerror = () => reject(new Error(this.$t("image3d.imageReadFailed")));
+				reader.readAsDataURL(file);
+			});
+		},
+		base64ToObjectUrl(value, type) {
+			const binary = atob(value);
+			const bytes = new Uint8Array(binary.length);
+			for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+			return URL.createObjectURL(new Blob([bytes], { type }));
 		},
 		publish() { this.publishOpen = false; },
 		applySettings() {
@@ -422,6 +494,9 @@ export default {
 			window.clearTimeout(this.toastTimer);
 			this.toastTimer = window.setTimeout(() => { this.toastMessage = ""; }, 3200);
 		}
+	},
+	beforeDestroy() {
+		if (this.modelUrl) URL.revokeObjectURL(this.modelUrl);
 	}
 };
 </script>
