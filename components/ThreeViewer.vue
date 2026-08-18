@@ -45,6 +45,8 @@ export default {
             const light = new THREE.DirectionalLight(0xffffff, 3);
             light.position.set(4, 6, 3); light.castShadow = true; this.scene.add(light);
             const grid = new THREE.GridHelper(10, 20, 0xd4d8dc, 0xe7e9eb);
+            // Keep the grid just below y=0, which is the asset ground plane.
+            grid.position.y = -0.001;
             this.scene.add(grid);
             this.resize(); window.addEventListener("resize", this.resize);
             if (this.modelUrl) this.loadModel(this.modelUrl);
@@ -66,6 +68,7 @@ export default {
             // the new mesh cannot inherit an edge-on view from the old one.
             this.clearModel();
             this.model = gltf.scene;
+            this.placeOnGround(this.model);
             this.scene.add(this.model);
             this.frameModel(this.model);
         },
@@ -80,6 +83,11 @@ export default {
             });
             this.model.removeFromParent();
             this.model = null;
+        },
+        placeOnGround(model)
+        {
+            const box = new this.THREE.Box3().setFromObject(model);
+            if (!box.isEmpty()) model.position.y -= box.min.y;
         },
         frameModel(model)
         {

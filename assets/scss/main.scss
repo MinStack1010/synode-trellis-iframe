@@ -63,10 +63,19 @@ body, .v-application {
     border-radius: 15px;
     background: #f8f9fa;
     cursor: pointer;
+    overflow: hidden;
 }
 .upload-box.has-image { border-style: solid; }
 .upload-box.dragging { border-color: #59b7bd; background: #edfafa; }
-.upload-preview { width: 100%; height: 100%; object-fit: contain; }
+.upload-preview {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    padding: 10px;
+    object-fit: contain;
+    object-position: center;
+}
 .upload-empty { gap: 8px; color: #77808a; }
 .upload-empty strong { color: #343940; font-size: 13px; }
 .upload-icon { width: 42px; height: 42px; border-radius: 50%; color: #fff; background: #737980; }
