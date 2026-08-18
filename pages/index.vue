@@ -208,9 +208,9 @@
 												>
 													{{ $t("image3d.exportGlb") }}
 
-													<small>
+													<!-- <small>
 														{{ $t("image3d.model") }}
-													</small>
+													</small> -->
 												</v-btn>
 											</div>
 										</transition>
