@@ -22,7 +22,7 @@ export default {
         window.removeEventListener("resize", this.resize);
         this.renderer?.dispose();
     },
-    watch: { modelUrl(url) { if (url) this.loadModel(url); } },
+    watch: { modelUrl(url) { if (url) this.loadModel(url); else this.clearModel(); } },
     methods: {
         async initialize()
         {
@@ -45,6 +45,8 @@ export default {
             const light = new THREE.DirectionalLight(0xffffff, 3);
             light.position.set(4, 6, 3); light.castShadow = true; this.scene.add(light);
             const grid = new THREE.GridHelper(10, 20, 0xd4d8dc, 0xe7e9eb);
+            // Keep the grid just below y=0, which is the asset ground plane.
+            grid.position.y = -0.001;
             this.scene.add(grid);
             this.resize(); window.addEventListener("resize", this.resize);
             if (this.modelUrl) this.loadModel(this.modelUrl);
@@ -62,7 +64,46 @@ export default {
             if (!this.THREE) return;
             const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
             const gltf = await new GLTFLoader().loadAsync(url);
-            this.model?.removeFromParent(); this.model = gltf.scene; this.scene.add(this.model);
+            // A generation replaces the previous asset.  Reframe the camera so
+            // the new mesh cannot inherit an edge-on view from the old one.
+            this.clearModel();
+            this.model = gltf.scene;
+            this.placeOnGround(this.model);
+            this.scene.add(this.model);
+            this.frameModel(this.model);
+        },
+        clearModel()
+        {
+            if (!this.model) return;
+            this.model.traverse((node) => {
+                if (!node.isMesh) return;
+                node.geometry?.dispose();
+                const materials = Array.isArray(node.material) ? node.material : [node.material];
+                materials.filter(Boolean).forEach((material) => material.dispose());
+            });
+            this.model.removeFromParent();
+            this.model = null;
+        },
+        placeOnGround(model)
+        {
+            const box = new this.THREE.Box3().setFromObject(model);
+            if (!box.isEmpty()) model.position.y -= box.min.y;
+        },
+        frameModel(model)
+        {
+            const box = new this.THREE.Box3().setFromObject(model);
+            if (box.isEmpty()) return;
+            const center = box.getCenter(new this.THREE.Vector3());
+            const size = box.getSize(new this.THREE.Vector3());
+            const maxDimension = Math.max(size.x, size.y, size.z, 0.01);
+            const distance = (maxDimension / (2 * Math.tan(this.THREE.MathUtils.degToRad(this.camera.fov / 2)))) * 1.4;
+
+            this.controls.target.copy(center);
+            this.camera.position.set(center.x + distance, center.y + distance * 0.65, center.z + distance);
+            this.camera.near = Math.max(distance / 100, 0.001);
+            this.camera.far = distance * 100;
+            this.camera.updateProjectionMatrix();
+            this.controls.update();
         }
     }
 };

@@ -1,6 +1,9 @@
 export default {
     ssr: false,
     target: "static",
+    env: {
+        trellisApiUrl: process.env.TRELLIS_API_URL || "/trellis-api"
+    },
     head: {
         title: "Image to 3D | Synode",
         meta: [
@@ -9,6 +12,9 @@ export default {
         ]
     },
     css: ["~/assets/scss/main.scss"],
+    serverMiddleware: [
+        { path: "/trellis-api", handler: "~/server-middleware/trellis-proxy.js" }
+    ],
     buildModules: ["@nuxtjs/vuetify"],
     modules: ["@nuxtjs/i18n"],
     plugins: ["~/plugins/iframe-locale.client.js"],

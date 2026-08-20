@@ -3,6 +3,7 @@ steps:
     args:
       - build
       - --tag=${_AR_LOCATION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_IMAGE}:$COMMIT_SHA
+      - --build-arg=TRELLIS_API_URL=${_TRELLIS_API_URL}
       - .
 
   - name: gcr.io/cloud-builders/docker
@@ -20,6 +21,7 @@ steps:
       - --region=${_REGION}
       - --platform=managed
       - --allow-unauthenticated
+      - --timeout=900
 
 substitutions:
   _AR_LOCATION: northamerica-northeast1
@@ -27,6 +29,7 @@ substitutions:
   _IMAGE: trellis-iframe
   _SERVICE: synode-trellis-iframe
   _REGION: northamerica-northeast1
+  _TRELLIS_API_URL: /trellis-api
 
 options:
   logging: CLOUD_LOGGING_ONLY
