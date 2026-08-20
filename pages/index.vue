@@ -485,8 +485,10 @@ export default {
 					this.jobMessage = status.message;
 
 					if (status.status === "completed") {
-						if (this.modelUrl) URL.revokeObjectURL(this.modelUrl);
-						this.modelUrl = this.base64ToObjectUrl(status.result.glb, "model/gltf-binary");
+						// GLB is now a public GCS URL — load directly into Three.js,
+						// no base64 decode needed. revokeObjectURL only if it was a blob: URL.
+						if (this.modelUrl && this.modelUrl.startsWith("blob:")) URL.revokeObjectURL(this.modelUrl);
+						this.modelUrl = status.result.glb_url;
 						this.generated = true;
 						this.showToast(this.$t("image3d.generatedSuccess", { seconds: status.result.generation_time }));
 						this.generating = false;
@@ -526,12 +528,6 @@ export default {
 				reader.readAsDataURL(file);
 			});
 		},
-		base64ToObjectUrl(value, type) {
-			const binary = atob(value);
-			const bytes = new Uint8Array(binary.length);
-			for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-			return URL.createObjectURL(new Blob([bytes], { type }));
-		},
 		publish() { this.publishOpen = false; },
 		applySettings() {
 			this.settingsApplied = true;
@@ -546,7 +542,7 @@ export default {
 		}
 	},
 	beforeDestroy() {
-		if (this.modelUrl) URL.revokeObjectURL(this.modelUrl);
+		if (this.modelUrl && this.modelUrl.startsWith("blob:")) URL.revokeObjectURL(this.modelUrl);
 	}
 };
 </script>
