@@ -261,6 +261,8 @@ body, .v-application {
 
 .app-toast { position: fixed; z-index: 70; right: 24px; bottom: 24px; gap: 9px; padding: 13px 16px; border-radius: 10px; color: #fff; background: #18221f; box-shadow: 0 10px 30px rgba(0, 0, 0, .2); font-size: 13px; font-weight: 600; }
 .app-toast span { display: grid; width: 19px; height: 19px; place-items: center; border-radius: 50%; color: #153b2d; background: #75d5b4; }
+.app-toast--error { background: #2a1414; }
+.app-toast--error span { color: #5c1a1a; background: #f28b82; }
 .toast-enter-active, .toast-leave-active { transition: opacity .2s ease, transform .2s ease; }
 .toast-enter, .toast-leave-to { opacity: 0; transform: translateY(8px); }
 

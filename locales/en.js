@@ -22,6 +22,7 @@ export default {
         generating: "Generating preview…",
 		apiNotConfigured: "The TRELLIS.2 API URL has not been configured.",
 		generationFailed: "The 3D model could not be generated.",
+		generationTimedOut: "Generation timed out after 10 minutes.",
 		imageReadFailed: "The selected image could not be read.",
 		generatedSuccess: "3D model generated in {seconds}s.",
         preview: "3D Preview",

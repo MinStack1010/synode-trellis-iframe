@@ -364,9 +364,10 @@
 			<div
 				v-if="toastMessage"
 				class="app-toast d-flex align-center"
-				role="status"
+				:class="{ 'app-toast--error': toastType === 'error' }"
+				:role="toastType === 'error' ? 'alert' : 'status'"
 			>
-				<span>✓</span>
+				<span aria-hidden="true">{{ toastType === 'error' ? '✕' : '✓' }}</span>
 				{{ toastMessage }}
 			</div>
 		</transition>
@@ -383,8 +384,8 @@ export default {
 	components: { AppHeader, ImageUpload, ThreeViewer },
 	data() {
 			return {
-						hasImage: false, selectedFile: null, generating: false, generated: false, seed: "284739", texture: "2048 px", decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: ["1024 px", "2048 px", "4096 px"], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
-				advancedOpen: false, exportOpen: false, publishOpen: false, modelUrl: "", settingsApplied: false, toastMessage: "", toastTimer: null,
+						hasImage: false, selectedFile: null, generating: false, generated: false, seed: "284739", texture: 2048, decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: [{ text: "1024 px", value: 1024 }, { text: "2048 px", value: 2048 }, { text: "4096 px", value: 4096 }], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
+				advancedOpen: false, exportOpen: false, publishOpen: false, modelUrl: "", settingsApplied: false, toastMessage: "", toastType: "success", toastTimer: null,
 				jobId: null, jobProgress: 0, jobMessage: "",
 				advanced: { sparseGuidance: 7.5, sparseRescale: .7, sparseSteps: 12, sparseT: 5, shapeGuidance: 7.5, shapeRescale: .5, shapeSteps: 12, shapeT: 3, materialGuidance: 1, materialRescale: 0, materialSteps: 12, materialT: 3 },
 				advancedStages: [
@@ -400,7 +401,8 @@ export default {
 			this.hasImage = Boolean(file);
 		},
 		openExtract() {
-			if (this.generated) this.exportOpen = true;
+			// "Extract GLB" tab — nếu đã có model thì download thẳng luôn
+			if (this.generated) this.downloadGlb();
 		},
 		toggleMenu(menu) {
 			const isOpen = menu === "export" ? this.exportOpen : this.publishOpen;
@@ -411,7 +413,7 @@ export default {
 			if (!this.selectedFile) return;
 			const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
 			if (!apiUrl) {
-				this.showToast(this.$t("image3d.apiNotConfigured"));
+			this.showToast(this.$t("image3d.apiNotConfigured"), "error");
 				return;
 			}
 
@@ -431,7 +433,7 @@ export default {
 						seed: Number(this.seed) || 0,
 						pipeline_type: this.resolution === "512" ? "512" : `${this.resolution}_cascade`,
 						decimation_target: this.decimationTarget,
-						texture_size: Number.parseInt(this.texture, 10),
+						texture_size: this.texture,
 						ss_guidance_strength: this.advanced.sparseGuidance,
 						ss_guidance_rescale: this.advanced.sparseRescale,
 						ss_sampling_steps: this.advanced.sparseSteps,
@@ -456,14 +458,21 @@ export default {
 				await this.pollJobStatus(apiUrl);
 
 			} catch (error) {
-				this.showToast(error.message || this.$t("image3d.generationFailed"));
+				this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
 				this.generating = false;
 			}
 		},
 		async pollJobStatus(apiUrl) {
 			const pollInterval = 2000; // 2 seconds
+			const MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes — guard against a job stuck in "processing"
+			const deadline = Date.now() + MAX_POLL_MS;
 
 			while (this.generating) {
+				if (Date.now() > deadline) {
+					this.showToast(this.$t("image3d.generationTimedOut"), "error");
+					this.generating = false;
+					return;
+				}
 				try {
 					const response = await fetch(`${apiUrl}/jobs/${this.jobId}`);
 					const status = await response.json();
@@ -489,7 +498,7 @@ export default {
 					// Continue polling
 					await new Promise(resolve => setTimeout(resolve, pollInterval));
 				} catch (error) {
-					this.showToast(error.message || this.$t("image3d.generationFailed"));
+					this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
 					this.generating = false;
 					return;
 				}
@@ -498,7 +507,7 @@ export default {
 		downloadGlb() {
 			this.exportOpen = false;
 			if (!this.modelUrl) {
-				this.showToast(this.$t("image3d.generateBeforeExport"));
+				this.showToast(this.$t("image3d.generateBeforeExport"), "error");
 				return;
 			}
 			const link = document.createElement("a");
@@ -529,8 +538,9 @@ export default {
 			this.advancedOpen = false;
 			this.showToast(this.$t("image3d.settingsApplied"));
 		},
-		showToast(message) {
+		showToast(message, type = "success") {
 			this.toastMessage = message;
+			this.toastType = type;
 			window.clearTimeout(this.toastTimer);
 			this.toastTimer = window.setTimeout(() => { this.toastMessage = ""; }, 3200);
 		}

@@ -24,6 +24,7 @@ export default {
         generationFailed: "Le modèle 3D n’a pas pu être généré.",
         imageReadFailed: "L’image sélectionnée n’a pas pu être lue.",
         generatedSuccess: "Modèle 3D généré en {seconds}s.",
+        generationTimedOut: "La génération a expiré après 10 minutes.",
         preview: "Aperçu 3D",
         extract: "Extraire le GLB",
         export: "Exporter",
