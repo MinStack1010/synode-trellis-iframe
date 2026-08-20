@@ -21,6 +21,7 @@ steps:
       - --region=${_REGION}
       - --platform=managed
       - --allow-unauthenticated
+      - --timeout=900
 
 substitutions:
   _AR_LOCATION: northamerica-northeast1
