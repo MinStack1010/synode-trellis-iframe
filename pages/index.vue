@@ -131,7 +131,7 @@
 						>
 							{{
 								generating
-									? $t("image3d.generating")
+									? `${$t("image3d.generating")} ${jobProgress > 0 ? `(${Math.round(jobProgress)}%)` : ''}`
 									: $t("image3d.generate")
 							}}
 						</v-btn>
@@ -384,14 +384,15 @@ export default {
 	data() {
 			return {
 						hasImage: false, selectedFile: null, generating: false, generated: false, seed: "284739", texture: "2048 px", decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: ["1024 px", "2048 px", "4096 px"], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
-			advancedOpen: false, exportOpen: false, publishOpen: false, modelUrl: "", settingsApplied: false, toastMessage: "", toastTimer: null,
-			advanced: { sparseGuidance: 7.5, sparseRescale: .7, sparseSteps: 12, sparseT: 5, shapeGuidance: 7.5, shapeRescale: .5, shapeSteps: 12, shapeT: 3, materialGuidance: 1, materialRescale: 0, materialSteps: 12, materialT: 3 },
-			advancedStages: [
-				{ name: "image3d.stages.sparse", fields: [{ key: "sparseGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "sparseRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "sparseSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "sparseT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
-				{ name: "image3d.stages.shape", fields: [{ key: "shapeGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "shapeRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "shapeSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "shapeT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
-				{ name: "image3d.stages.material", fields: [{ key: "materialGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "materialRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "materialSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "materialT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] }
-			]
-		};
+				advancedOpen: false, exportOpen: false, publishOpen: false, modelUrl: "", settingsApplied: false, toastMessage: "", toastTimer: null,
+				jobId: null, jobProgress: 0, jobMessage: "",
+				advanced: { sparseGuidance: 7.5, sparseRescale: .7, sparseSteps: 12, sparseT: 5, shapeGuidance: 7.5, shapeRescale: .5, shapeSteps: 12, shapeT: 3, materialGuidance: 1, materialRescale: 0, materialSteps: 12, materialT: 3 },
+				advancedStages: [
+					{ name: "image3d.stages.sparse", fields: [{ key: "sparseGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "sparseRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "sparseSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "sparseT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
+					{ name: "image3d.stages.shape", fields: [{ key: "shapeGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "shapeRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "shapeSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "shapeT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
+					{ name: "image3d.stages.material", fields: [{ key: "materialGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "materialRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "materialSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "materialT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] }
+				]
+			};
 	},
 	methods: {
 		onImageChanged(file) {
@@ -416,9 +417,12 @@ export default {
 
 			this.generating = true;
 			this.generated = false;
+			this.jobProgress = 0;
+			this.jobMessage = "";
 			if (this.randomizeSeed) this.seed = Math.floor(Math.random() * 4294967295).toString();
 
 			try {
+				// Create job
 				const response = await fetch(`${apiUrl}/generate`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
@@ -442,17 +446,53 @@ export default {
 						tex_slat_rescale_t: this.advanced.materialT
 					})
 				});
-				const result = await response.json();
-				if (!response.ok) throw new Error(result.detail || "Generation failed");
+				const jobResult = await response.json();
+				if (!response.ok) throw new Error(jobResult.detail || "Job creation failed");
 
-				if (this.modelUrl) URL.revokeObjectURL(this.modelUrl);
-				this.modelUrl = this.base64ToObjectUrl(result.glb, "model/gltf-binary");
-				this.generated = true;
-				this.showToast(this.$t("image3d.generatedSuccess", { seconds: result.generation_time }));
+				this.jobId = jobResult.job_id;
+				this.jobMessage = "Job queued";
+
+				// Poll job status
+				await this.pollJobStatus(apiUrl);
+
 			} catch (error) {
 				this.showToast(error.message || this.$t("image3d.generationFailed"));
-			} finally {
 				this.generating = false;
+			}
+		},
+		async pollJobStatus(apiUrl) {
+			const pollInterval = 2000; // 2 seconds
+
+			while (this.generating) {
+				try {
+					const response = await fetch(`${apiUrl}/jobs/${this.jobId}`);
+					const status = await response.json();
+					
+					if (!response.ok) {
+						throw new Error(status.detail || "Failed to get job status");
+					}
+
+					this.jobProgress = status.progress;
+					this.jobMessage = status.message;
+
+					if (status.status === "completed") {
+						if (this.modelUrl) URL.revokeObjectURL(this.modelUrl);
+						this.modelUrl = this.base64ToObjectUrl(status.result.glb, "model/gltf-binary");
+						this.generated = true;
+						this.showToast(this.$t("image3d.generatedSuccess", { seconds: status.result.generation_time }));
+						this.generating = false;
+						return;
+					} else if (status.status === "failed") {
+						throw new Error(status.error || "Generation failed");
+					}
+
+					// Continue polling
+					await new Promise(resolve => setTimeout(resolve, pollInterval));
+				} catch (error) {
+					this.showToast(error.message || this.$t("image3d.generationFailed"));
+					this.generating = false;
+					return;
+				}
 			}
 		},
 		downloadGlb() {
