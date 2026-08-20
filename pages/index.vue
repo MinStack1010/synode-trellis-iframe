@@ -126,9 +126,9 @@
 							height="52"
 							class="generate mt-3"
 							:disabled="!hasImage || generating"
-							:loading="generating"
 							@click="generate"
 						>
+							<span v-if="generating" class="btn-spinner" aria-hidden="true" />
 							{{
 								generating
 									? `${$t("image3d.generating")} ${jobProgress > 0 ? `(${Math.round(jobProgress)}%)` : ''}`

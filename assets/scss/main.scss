@@ -263,6 +263,9 @@ body, .v-application {
 .app-toast span { display: grid; width: 19px; height: 19px; place-items: center; border-radius: 50%; color: #153b2d; background: #75d5b4; }
 .app-toast--error { background: #2a1414; }
 .app-toast--error span { color: #5c1a1a; background: #f28b82; }
+
+.btn-spinner { display: inline-block; width: 14px; height: 14px; margin-right: 7px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: btn-spin .7s linear infinite; flex-shrink: 0; }
+@keyframes btn-spin { to { transform: rotate(360deg); } }
 .toast-enter-active, .toast-leave-active { transition: opacity .2s ease, transform .2s ease; }
 .toast-enter, .toast-leave-to { opacity: 0; transform: translateY(8px); }
 
