@@ -1,6 +1,5 @@
 <template>
     <div ref="viewport" class="glb-viewport">
-        <!-- Empty state -->
         <div v-if="!modelUrl && !isLoading" class="viewer-empty d-flex flex-column align-center">
             <span>
                 <img src="/logo/synodeLogo.png" alt="Synode" />
@@ -9,21 +8,17 @@
             <p>{{ $t("image3d.viewerText") }}</p>
         </div>
 
-        <!-- Synode-style loading overlay -->
         <transition name="loader-fade">
             <div v-if="isLoading" class="synode-loader-overlay">
                 <div class="synode-loader-content">
-                    <!-- Synode icon -->
                     <div class="synode-loader-logo">
                         <img src="/logo/synodeLogo.png" alt="Synode" class="synode-icon" aria-hidden="true" />
                     </div>
 
-                    <!-- Progress bar -->
                     <div class="synode-loader-bar-wrap">
                         <div class="synode-loader-bar" :class="{ 'is-queued': queuePosition !== null }" :style="{ width: progressWidth }"></div>
                     </div>
 
-                    <!-- Label -->
                     <p class="synode-loader-label">
                         {{ loadingLabel }}
                     </p>
@@ -42,26 +37,20 @@ export default {
     name: "ThreeViewer",
     props: {
         modelUrl: { type: String, default: "" },
-        /** Pass true while the backend job is running so the loader shows immediately */
         generating: { type: Boolean, default: false },
-        /** 0–100, forwarded from the parent polling loop */
         progress: { type: Number, default: 0 },
-        /** Queue position from API: 1 = next, 2+ = waiting. null = processing */
         queuePosition: { type: Number, default: null }
     },
     data() {
         return {
             renderer: null, scene: null, camera: null, controls: null, frame: null,
-            /** true while THREE is loading the GLB file from the URL */
             loadingModel: false
         };
     },
     computed: {
         isLoading() { return this.generating || this.loadingModel; },
-        /** Clamp 0–100 → 5–95 while generating, jump to 100 when loadingModel finishes */
         progressWidth() {
             if (this.loadingModel) return "95%";
-            // Khi đang queue: hiện bar nhỏ + animation pulse thay vì tiến trình giả
             if (this.queuePosition !== null) return "8%";
             if (this.progress > 0) return `${Math.min(Math.max(this.progress, 5), 94)}%`;
             return "20%";
@@ -174,7 +163,6 @@ export default {
 </script>
 
 <style scoped>
-/* ── Loading overlay ─────────────────────────────────────────── */
 .synode-loader-overlay {
     position: absolute;
     inset: 0;
@@ -195,7 +183,6 @@ export default {
     width: 280px;
 }
 
-/* Logo */
 .synode-loader-logo {
     width: 110px;
     height: 110px;
@@ -212,7 +199,6 @@ export default {
     filter: drop-shadow(0 4px 16px rgba(40, 183, 194, 0.35));
 }
 
-/* Empty state logo */
 .viewer-empty span {
     width: 74px;
     height: 74px;
@@ -227,7 +213,6 @@ export default {
     object-fit: contain;
 }
 
-/* Progress bar */
 .synode-loader-bar-wrap {
     width: 100%;
     height: 6px;
@@ -244,7 +229,6 @@ export default {
     box-shadow: 0 0 10px rgba(40, 183, 194, 0.4);
 }
 
-/* Label */
 .synode-loader-label {
     font-size: 13px;
     color: rgba(0, 0, 0, 0.5);
@@ -253,7 +237,6 @@ export default {
     text-align: center;
 }
 
-/* Float animation for the logo */
 @keyframes synode-float {
     0%, 100% {
         transform: translateY(0px);
@@ -263,7 +246,6 @@ export default {
     }
 }
 
-/* Queue state: bar pulses to signal "waiting" */
 .synode-loader-bar.is-queued {
     animation: bar-pulse 1.6s ease-in-out infinite;
 }
@@ -277,7 +259,6 @@ export default {
     }
 }
 
-/* Fade transition */
 .loader-fade-enter-active,
 .loader-fade-leave-active {
     transition: opacity 0.35s ease;

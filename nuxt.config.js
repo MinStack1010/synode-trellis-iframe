@@ -1,11 +1,7 @@
 export default {
     ssr: false,
-    // target: "server" khi dev (để serverMiddleware proxy hoạt động),
-    //         "static" khi production (nuxt generate → nginx serve)
     target: process.env.NODE_ENV === "production" ? "static" : "server",
     env: {
-        // Proxy path được nginx forward đến http://34.42.10.21:8080
-        // Khi dev local: serverMiddleware forward đến TRELLIS_PROXY_TARGET
         trellisApiUrl: "/trellis-api"
     },
     head: {

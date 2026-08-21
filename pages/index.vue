@@ -13,17 +13,12 @@
 							{{ $t("image3d.title") }}
 						</h1>
 
-						<!-- <p class="intro mb-5">
-							{{ $t("image3d.description") }}
-						</p> -->
-
 						<image-upload ref="imageUpload" @changed="onImageChanged" />
 
 						<v-divider class="my-5" />
 
 						<div class="generation-title d-flex align-center justify-space-between">
 							<h2>{{ $t("image3d.generation") }}</h2>
-							<!-- <span>TRELLIS.2 · 4B</span> -->
 						</div>
 
 						<div
@@ -120,7 +115,6 @@
 							<b>+</b>
 						</v-btn>
 
-						<!-- Resume banner: hiện khi reload lại và có job đang chạy -->
 						<transition name="banner-slide">
 							<div v-if="resumedFromStorage" class="resume-banner d-flex align-center mt-3" role="status">
 								<span class="resume-banner__dot" aria-hidden="true"></span>
@@ -128,7 +122,6 @@
 							</div>
 						</transition>
 
-						<!-- Generate button bọc trong tooltip khi đang busy -->
 						<v-tooltip
 							:disabled="!generating && !serverBusy"
 							top
@@ -136,7 +129,6 @@
 							content-class="generate-tooltip"
 						>
 							<template #activator="{ on, attrs }">
-								<!-- span wrapper để tooltip hoạt động khi button disabled -->
 								<span v-bind="attrs" v-on="on" class="generate-btn-wrap mt-3 d-block">
 									<v-btn
 										type="button"
@@ -169,7 +161,6 @@
 							<span>{{ serverBusy && !generating ? $t("image3d.serverBusyShort") : $t("image3d.generateBusy") }}</span>
 						</v-tooltip>
 
-						<!-- Máy B: hint khi server đang bận -->
 						<transition name="banner-slide">
 							<p v-if="serverBusy && !generating" class="server-busy-hint mt-2 mb-0" role="status">
 								<span class="server-busy-hint__dot" aria-hidden="true"></span>
@@ -190,7 +181,6 @@
 								class="tool-actions-column"
 							>
 								<div class="tool-actions d-flex">
-									<!-- Export menu -->
 									<div class="menu-wrap">
 										<v-btn
 											type="button"
@@ -226,7 +216,6 @@
 										</transition>
 									</div>
 
-									<!-- Publish menu -->
 									<div class="menu-wrap">
 										<v-btn
 											type="button"
@@ -292,8 +281,6 @@
 			>
 				<header class="d-flex align-start justify-space-between">
 					<div>
-						<!-- <span class="eyebrow">TRELLIS.2 · 4B</span> -->
-
 						<h2>
 							{{ $t("image3d.advanced") }}
 						</h2>
@@ -381,17 +368,14 @@ export default {
 	components: { AppHeader, ImageUpload, ThreeViewer },
 	data() {
 			return {
-						hasImage: false, selectedFile: null, generating: false, generated: false, seed: "284739", texture: 2048, decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: [{ text: "1024 px", value: 1024 }, { text: "2048 px", value: 2048 }, { text: "4096 px", value: 4096 }], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
+				hasImage: false, selectedFile: null, generating: false, generated: false, seed: "284739", texture: 2048, decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: [{ text: "1024 px", value: 1024 }, { text: "2048 px", value: 2048 }, { text: "4096 px", value: 4096 }], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
 				advancedOpen: false, exportOpen: false, publishOpen: false, modelUrl: "", settingsApplied: false, toastMessage: "", toastType: "success", toastTimer: null,
 				jobId: null, jobProgress: 0, jobMessage: "",
-			/** true khi trang reload và phát hiện jobId đang chạy trong localStorage */
-			resumedFromStorage: false,
-			/** Vị trí trong queue khi status = queued, null khi đang processing */
-			jobQueuePosition: null,
-			/** Trạng thái queue cho máy B (không có jobId riêng) */
-			serverBusy: false,
-			serverQueuedCount: 0,
-			serverEstimatedWait: null,
+				resumedFromStorage: false,
+				jobQueuePosition: null,
+				serverBusy: false,
+				serverQueuedCount: 0,
+				serverEstimatedWait: null,
 				advanced: { sparseGuidance: 7.5, sparseRescale: .7, sparseSteps: 12, sparseT: 5, shapeGuidance: 7.5, shapeRescale: .5, shapeSteps: 12, shapeT: 3, materialGuidance: 1, materialRescale: 0, materialSteps: 12, materialT: 3 },
 				advancedStages: [
 					{ name: "image3d.stages.sparse", fields: [{ key: "sparseGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "sparseRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "sparseSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "sparseT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
@@ -401,17 +385,13 @@ export default {
 			};
 	},
 	created() {
-		// F-M2: private fields không cần reactive → khỏi data() tránh Vue track overhead
 		this._destroyed = false;
 		this._queuePollInterval = null;
 	},
 	async mounted() {
-		// Bug #4 fix: Restore preview image từ localStorage nếu có
-		// Dùng base64 URL trực tiếp thay vì fetch() để tránh lỗi CORS/blob khi restore
 		const savedPreview = localStorage.getItem("trellis_preview_image");
 		if (savedPreview) {
 			try {
-				// Bug #5 fix: Dùng base64 URL trực tiếp → không cần fetch, không CORS
 				const mimeMatch = savedPreview.match(/^data:([^;]+);/);
 				const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
 				const base64Data = savedPreview.split(",")[1];
@@ -439,7 +419,6 @@ export default {
 
 		const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
 
-		// Bug #1 fix: Resume job nếu còn jobId trong localStorage (VD: user reload trang giữa chừng)
 		const savedJobId = localStorage.getItem("trellis_active_job_id");
 		if (savedJobId && apiUrl) {
 			try {
@@ -453,31 +432,23 @@ export default {
 						this.resumedFromStorage = true;
 						this.jobProgress = status.progress || 0;
 						this.jobMessage = this.$t("image3d.resumeProgress");
-						// pollJobStatus sẽ tự gọi _startQueuePoll() khi kết thúc
 						await this.pollJobStatus(apiUrl);
-						// Bug #4 fix: sau khi pollJobStatus xong, _startQueuePoll đã được gọi
-						// bên trong pollJobStatus rồi → KHÔNG setup interval ở đây nữa
 						return;
 					} else if (status.status === "completed" && status.result?.glb_url) {
-						// Job đã hoàn thành trước khi reload → hiển thị model ngay
 						this.modelUrl = status.result.glb_url;
 						this.generated = true;
 						this.resumedFromStorage = false;
 						localStorage.removeItem("trellis_active_job_id");
 						localStorage.removeItem("trellis_preview_image");
-						// Bug #4 fix: _startQueuePoll ở đây là DUY NHẤT → không double
 						this._startQueuePoll();
 						return;
 					}
 				}
 			} catch (_) {
-				// Nếu API không phản hồi, xóa job cũ và tiếp tục bình thường
 			}
 			localStorage.removeItem("trellis_active_job_id");
 		}
 
-		// Máy B (hoặc sau khi clear job cũ): poll queue status để hiện banner busy
-		// Bug #4 fix: chỉ đến đây nếu không có job resume → không thể có double interval
 		if (apiUrl) {
 			await this.checkQueueStatus(apiUrl);
 			this._startQueuePoll();
@@ -487,14 +458,12 @@ export default {
 		onImageChanged(file) {
 			this.selectedFile = file;
 			this.hasImage = Boolean(file);
-			// Lưu preview image vào localStorage để restore sau khi reload
 			if (file) {
 				const reader = new FileReader();
 				reader.onload = (e) => {
 					try {
 						localStorage.setItem("trellis_preview_image", e.target.result);
 					} catch (err) {
-						// F-H1: localStorage đầy → xóa jobId luôn để tránh resume không có ảnh
 						console.warn("localStorage full:", err);
 						localStorage.removeItem("trellis_active_job_id");
 						localStorage.removeItem("trellis_preview_image");
@@ -506,10 +475,8 @@ export default {
 			}
 		},
 		openExtract() {
-			// "Extract GLB" tab — nếu đã có model thì download thẳng luôn
 			if (this.generated) this.downloadGlb();
 		},
-		/** Gọi GET /queue/status để máy B biết server đang bận hay không */
 		async checkQueueStatus(apiUrlOverride) {
 			const apiUrl = apiUrlOverride || (process.env.trellisApiUrl || "").replace(/\/$/, "");
 			if (!apiUrl) return;
@@ -521,17 +488,14 @@ export default {
 				this.serverQueuedCount = data.queued_count || 0;
 				this.serverEstimatedWait = data.estimated_wait_seconds ?? null;
 			} catch (_) {
-				// Không thể reach API — giữ nguyên trạng thái hiện tại
 			}
 		},
-		/** Dừng interval poll queue */
 		_stopQueuePoll() {
 			if (this._queuePollInterval !== null) {
 				clearInterval(this._queuePollInterval);
 				this._queuePollInterval = null;
 			}
 		},
-		/** Bắt đầu lại interval poll queue sau khi job xong */
 		_startQueuePoll() {
 			this._stopQueuePoll();
 			const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
@@ -548,7 +512,6 @@ export default {
 			this.publishOpen = menu === "publish" && !isOpen;
 		},
 		async generate() {
-			// F-M1: guard cả generating để tránh double-click tạo 2 jobs
 			if (!this.selectedFile || this.generating) return;
 			const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
 			if (!apiUrl) {
@@ -560,12 +523,11 @@ export default {
 			this.generated = false;
 			this.jobProgress = 0;
 			this.jobMessage = "";
-			this.serverBusy = false; // Máy này đang generate → ẩn banner busy của người khác
-			this._stopQueuePoll(); // Không cần poll queue nữa, đang poll job status riêng
+			this.serverBusy = false;
+			this._stopQueuePoll();
 			if (this.randomizeSeed) this.seed = Math.floor(Math.random() * 4294967295).toString();
 
 			try {
-				// Create job
 				const response = await fetch(`${apiUrl}/generate`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
@@ -594,26 +556,22 @@ export default {
 
 				this.jobId = jobResult.job_id;
 				this.jobMessage = "Job queued";
-				// Lưu jobId để resume được sau khi reload trang
 				localStorage.setItem("trellis_active_job_id", this.jobId);
 
-				// Poll job status
 				await this.pollJobStatus(apiUrl);
 
 			} catch (error) {
 				this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
 				this.generating = false;
 				localStorage.removeItem("trellis_active_job_id");
-				// Restart queue poll sau khi thất bại
 				this._startQueuePoll();
 			}
 		},
 		async pollJobStatus(apiUrl) {
-			const pollInterval = 2000; // 2 seconds
-			const MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes — guard against a job stuck in "processing"
+			const pollInterval = 2000;
+			const MAX_POLL_MS = 10 * 60 * 1000;
 			const deadline = Date.now() + MAX_POLL_MS;
 
-			// Bug #3 fix: dừng poll nếu component đã bị destroy
 			while (this.generating && !this._destroyed) {
 				if (Date.now() > deadline) {
 					this.showToast(this.$t("image3d.generationTimedOut"), "error");
@@ -628,7 +586,6 @@ export default {
 					const response = await fetch(`${apiUrl}/jobs/${this.jobId}`);
 					const status = await response.json();
 					
-					// Bug #3 fix: kiểm tra lại sau khi await (component có thể đã bị destroy)
 					if (this._destroyed) return;
 
 					if (!response.ok) {
@@ -640,8 +597,6 @@ export default {
 					this.jobQueuePosition = status.queue_position ?? null;
 
 					if (status.status === "completed") {
-						// GLB is now a public GCS URL — load directly into Three.js,
-						// no base64 decode needed. revokeObjectURL only if it was a blob: URL.
 						if (this.modelUrl && this.modelUrl.startsWith("blob:")) URL.revokeObjectURL(this.modelUrl);
 						this.modelUrl = status.result.glb_url;
 						this.generated = true;
@@ -650,24 +605,20 @@ export default {
 						this.resumedFromStorage = false;
 						this.jobQueuePosition = null;
 						localStorage.removeItem("trellis_active_job_id");
-						// Job xong → không cần giữ ảnh trong localStorage nữa
 						localStorage.removeItem("trellis_preview_image");
-						// Restart queue poll để theo dõi trạng thái server
 						this._startQueuePoll();
 						return;
 					} else if (status.status === "failed") {
 						throw new Error(status.error || "Generation failed");
 					}
 
-					// Continue polling
 					await new Promise(resolve => setTimeout(resolve, pollInterval));
 				} catch (error) {
-					if (this._destroyed) return; // Bug #3 fix: bỏ qua nếu component đã destroy
+					if (this._destroyed) return;
 					this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
 					this.generating = false;
 					this.resumedFromStorage = false;
 					localStorage.removeItem("trellis_active_job_id");
-					// Restart queue poll để tiếp tục theo dõi server
 					this._startQueuePoll();
 					return;
 				}
@@ -679,8 +630,6 @@ export default {
 				this.showToast(this.$t("image3d.generateBeforeExport"), "error");
 				return;
 			}
-			// F-M3: GCS URL cross-origin → link.download bị browser ignore.
-			// Fetch blob trước rồi tạo object URL để download hoạt động đúng.
 			try {
 				const res = await fetch(this.modelUrl);
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -695,7 +644,6 @@ export default {
 				link.remove();
 				URL.revokeObjectURL(blobUrl);
 			} catch (_) {
-				// Fallback: mở URL trực tiếp trong tab mới (user tự save)
 				window.open(this.modelUrl, "_blank", "noopener");
 				this.showToast(this.$t("image3d.downloadFallback"), "success");
 			}
@@ -722,7 +670,6 @@ export default {
 		}
 	},
 	beforeDestroy() {
-		// Bug #3 fix: set flag để dừng poll loop ngay lập tức
 		this._destroyed = true;
 		this._stopQueuePoll();
 		if (this.modelUrl && this.modelUrl.startsWith("blob:")) URL.revokeObjectURL(this.modelUrl);
@@ -732,7 +679,6 @@ export default {
 </script>
 
 <style scoped>
-/* ── Resume banner ───────────────────────────────────────────── */
 .resume-banner {
     background: #fff8e1;
     border: 1px solid #ffe082;
@@ -758,19 +704,15 @@ export default {
     50%       { opacity: 0.4; transform: scale(0.75); }
 }
 
-/* Transition banner */
 .banner-slide-enter-active,
 .banner-slide-leave-active { transition: all 0.3s ease; }
 .banner-slide-enter,
 .banner-slide-leave-to    { opacity: 0; transform: translateY(-6px); }
 
-/* ── Generate button wrapper (tooltip needs non-disabled parent) */
 .generate-btn-wrap {
-    /* Ensure the wrapper doesn't add extra spacing */
     line-height: 0;
 }
 
-/* ── Server busy hint (máy B) ────────────────────────────────── */
 .server-busy-hint {
     display: flex;
     align-items: center;
@@ -788,10 +730,6 @@ export default {
     background: #e53935;
     animation: dot-pulse 1.4s ease-in-out infinite;
 }
-</style>
-
-<style>
-/* Tooltip non-scoped pour Vuetify content-class */
 .generate-tooltip {
     background: #37474f !important;
     color: #fff !important;
