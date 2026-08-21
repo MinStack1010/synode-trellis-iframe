@@ -120,21 +120,54 @@
 							<b>+</b>
 						</v-btn>
 
-						<v-btn
-							type="button"
-							block
-							height="52"
-							class="generate mt-3"
-							:disabled="!hasImage || generating"
-							@click="generate"
+						<!-- Resume banner: hiện khi reload lại và có job đang chạy -->
+						<transition name="banner-slide">
+							<div v-if="resumedFromStorage" class="resume-banner d-flex align-center mt-3" role="status">
+								<span class="resume-banner__dot" aria-hidden="true"></span>
+								<span>{{ $t("image3d.resumeBanner") }}</span>
+							</div>
+						</transition>
+
+						<!-- Generate button bọc trong tooltip khi đang busy -->
+						<v-tooltip
+							:disabled="!generating"
+							top
+							max-width="260"
+							content-class="generate-tooltip"
 						>
-							<span v-if="generating" class="btn-spinner" aria-hidden="true" />
-							{{
-								generating
-									? `${$t("image3d.generating")} ${jobProgress > 0 ? `(${Math.round(jobProgress)}%)` : ''}`
-									: $t("image3d.generate")
-							}}
-						</v-btn>
+							<template #activator="{ on, attrs }">
+								<!-- span wrapper để tooltip hoạt động khi button disabled -->
+								<span v-bind="attrs" v-on="on" class="generate-btn-wrap mt-3 d-block">
+									<v-btn
+										type="button"
+										block
+										height="52"
+										class="generate"
+										:disabled="!hasImage || generating"
+										@click="generate"
+									>
+										<span v-if="generating" class="btn-spinner" aria-hidden="true" />
+										<template v-if="generating">
+											<template v-if="jobQueuePosition !== null">
+												{{
+													jobQueuePosition === 1
+														? $t("image3d.queuePositionNext")
+														: $t("image3d.queuePosition", { position: jobQueuePosition })
+												}}
+											</template>
+											<template v-else>
+												{{ $t("image3d.generating") }}
+												<template v-if="jobProgress > 0"> ({{ Math.round(jobProgress) }}%)</template>
+											</template>
+										</template>
+										<template v-else>
+											{{ $t("image3d.generate") }}
+										</template>
+									</v-btn>
+								</span>
+							</template>
+							<span>{{ $t("image3d.generateBusy") }}</span>
+						</v-tooltip>
 					</aside>
 				</v-col>
 
@@ -231,6 +264,7 @@
 							:model-url="modelUrl"
 							:generating="generating"
 							:progress="jobProgress"
+							:queue-position="jobQueuePosition"
 						/>
 					</section>
 				</v-col>
@@ -342,6 +376,10 @@ export default {
 						hasImage: false, selectedFile: null, generating: false, generated: false, seed: "284739", texture: 2048, decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: [{ text: "1024 px", value: 1024 }, { text: "2048 px", value: 2048 }, { text: "4096 px", value: 4096 }], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
 				advancedOpen: false, exportOpen: false, publishOpen: false, modelUrl: "", settingsApplied: false, toastMessage: "", toastType: "success", toastTimer: null,
 				jobId: null, jobProgress: 0, jobMessage: "",
+			/** true khi trang reload và phát hiện jobId đang chạy trong localStorage */
+			resumedFromStorage: false,
+			/** Vị trí trong queue khi status = queued, null khi đang processing */
+			jobQueuePosition: null,
 				advanced: { sparseGuidance: 7.5, sparseRescale: .7, sparseSteps: 12, sparseT: 5, shapeGuidance: 7.5, shapeRescale: .5, shapeSteps: 12, shapeT: 3, materialGuidance: 1, materialRescale: 0, materialSteps: 12, materialT: 3 },
 				advancedStages: [
 					{ name: "image3d.stages.sparse", fields: [{ key: "sparseGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "sparseRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "sparseSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "sparseT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
@@ -349,6 +387,32 @@ export default {
 					{ name: "image3d.stages.material", fields: [{ key: "materialGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "materialRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "materialSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "materialT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] }
 				]
 			};
+	},
+	async mounted() {
+		// Resume job nếu còn jobId trong localStorage (VD: user reload trang giữa chừng)
+		const savedJobId = localStorage.getItem("trellis_active_job_id");
+		const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
+		if (savedJobId && apiUrl) {
+			try {
+				// Kiểm tra nhanh xem job còn active không trước khi resume
+				const check = await fetch(`${apiUrl}/jobs/${savedJobId}`);
+				if (check.ok) {
+					const status = await check.json();
+					if (status.status === "processing" || status.status === "queued") {
+						this.jobId = savedJobId;
+						this.generating = true;
+						this.resumedFromStorage = true;
+						this.jobProgress = status.progress || 0;
+						this.jobMessage = this.$t("image3d.resumeProgress");
+						await this.pollJobStatus(apiUrl);
+						return;
+					}
+				}
+			} catch (_) {
+				// Nếu API không phản hồi, xóa job cũ và tiếp tục bình thường
+			}
+			localStorage.removeItem("trellis_active_job_id");
+		}
 	},
 	methods: {
 		onImageChanged(file) {
@@ -408,6 +472,8 @@ export default {
 
 				this.jobId = jobResult.job_id;
 				this.jobMessage = "Job queued";
+				// Lưu jobId để resume được sau khi reload trang
+				localStorage.setItem("trellis_active_job_id", this.jobId);
 
 				// Poll job status
 				await this.pollJobStatus(apiUrl);
@@ -415,6 +481,7 @@ export default {
 			} catch (error) {
 				this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
 				this.generating = false;
+				localStorage.removeItem("trellis_active_job_id");
 			}
 		},
 		async pollJobStatus(apiUrl) {
@@ -426,6 +493,8 @@ export default {
 				if (Date.now() > deadline) {
 					this.showToast(this.$t("image3d.generationTimedOut"), "error");
 					this.generating = false;
+					this.resumedFromStorage = false;
+					localStorage.removeItem("trellis_active_job_id");
 					return;
 				}
 				try {
@@ -438,6 +507,7 @@ export default {
 
 					this.jobProgress = status.progress;
 					this.jobMessage = status.message;
+					this.jobQueuePosition = status.queue_position ?? null;
 
 					if (status.status === "completed") {
 						// GLB is now a public GCS URL — load directly into Three.js,
@@ -447,6 +517,9 @@ export default {
 						this.generated = true;
 						this.showToast(this.$t("image3d.generatedSuccess", { seconds: status.result.generation_time }));
 						this.generating = false;
+						this.resumedFromStorage = false;
+						this.jobQueuePosition = null;
+						localStorage.removeItem("trellis_active_job_id");
 						return;
 					} else if (status.status === "failed") {
 						throw new Error(status.error || "Generation failed");
@@ -457,6 +530,8 @@ export default {
 				} catch (error) {
 					this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
 					this.generating = false;
+					this.resumedFromStorage = false;
+					localStorage.removeItem("trellis_active_job_id");
 					return;
 				}
 			}
@@ -501,3 +576,56 @@ export default {
 	}
 };
 </script>
+
+<style scoped>
+/* ── Resume banner ───────────────────────────────────────────── */
+.resume-banner {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #795548;
+    gap: 10px;
+    line-height: 1.4;
+}
+
+.resume-banner__dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #f9a825;
+    animation: dot-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.75); }
+}
+
+/* Transition banner */
+.banner-slide-enter-active,
+.banner-slide-leave-active { transition: all 0.3s ease; }
+.banner-slide-enter,
+.banner-slide-leave-to    { opacity: 0; transform: translateY(-6px); }
+
+/* ── Generate button wrapper (tooltip needs non-disabled parent) */
+.generate-btn-wrap {
+    /* Ensure the wrapper doesn't add extra spacing */
+    line-height: 0;
+}
+</style>
+
+<style>
+/* Tooltip non-scoped pour Vuetify content-class */
+.generate-tooltip {
+    background: #37474f !important;
+    color: #fff !important;
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+    padding: 8px 12px !important;
+    border-radius: 6px !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18) !important;
+}
+</style>

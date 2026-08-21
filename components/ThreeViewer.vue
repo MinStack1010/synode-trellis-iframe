@@ -33,7 +33,7 @@
 
                     <!-- Progress bar -->
                     <div class="synode-loader-bar-wrap">
-                        <div class="synode-loader-bar" :style="{ width: progressWidth }"></div>
+                        <div class="synode-loader-bar" :class="{ 'is-queued': queuePosition !== null }" :style="{ width: progressWidth }"></div>
                     </div>
 
                     <!-- Label -->
@@ -58,7 +58,9 @@ export default {
         /** Pass true while the backend job is running so the loader shows immediately */
         generating: { type: Boolean, default: false },
         /** 0–100, forwarded from the parent polling loop */
-        progress: { type: Number, default: 0 }
+        progress: { type: Number, default: 0 },
+        /** Queue position from API: 1 = next, 2+ = waiting. null = processing */
+        queuePosition: { type: Number, default: null }
     },
     data() {
         return {
@@ -72,12 +74,22 @@ export default {
         /** Clamp 0–100 → 5–95 while generating, jump to 100 when loadingModel finishes */
         progressWidth() {
             if (this.loadingModel) return "95%";
+            // Khi đang queue: hiện bar nhỏ + animation pulse thay vì tiến trình giả
+            if (this.queuePosition !== null) return "8%";
             if (this.progress > 0) return `${Math.min(Math.max(this.progress, 5), 94)}%`;
             return "20%";
         },
         loadingLabel() {
             if (this.loadingModel) return this.$t("image3d.loadingModel") || "Loading model…";
-            return this.$t("image3d.generating") || "Generating 3D model…";
+            if (this.queuePosition !== null) {
+                if (this.queuePosition === 1) {
+                    return this.$t("image3d.queuePositionNext") || "You're next — starting shortly…";
+                }
+                return this.$t("image3d.queuePosition", { position: this.queuePosition })
+                    || `You're #${this.queuePosition} in the queue…`;
+            }
+            const pct = this.progress > 0 ? ` (${Math.round(this.progress)}%)` : "";
+            return (this.$t("image3d.generating") || "Generating 3D model…") + pct;
         }
     },
     mounted() { this.initialize(); },
@@ -242,6 +254,16 @@ export default {
 @keyframes synode-float {
     0%, 100% { transform: translateY(0px); }
     50%       { transform: translateY(-8px); }
+}
+
+/* Queue state: bar pulses to signal "waiting" */
+.synode-loader-bar.is-queued {
+    animation: bar-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes bar-pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.35; }
 }
 
 /* Fade transition */
