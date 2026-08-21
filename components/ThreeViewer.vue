@@ -15,7 +15,7 @@
                 <div class="synode-loader-content">
                     <!-- Synode icon -->
                     <div class="synode-loader-logo">
-                        <img src="/logo/icone.svg" alt="Synode" class="synode-icon" aria-hidden="true" />
+                        <img src="/logo/synodeLogo.png" alt="Synode" class="synode-icon" aria-hidden="true" />
                     </div>
 
                     <!-- Progress bar -->
