@@ -1,6 +1,6 @@
 export default {
     ssr: false,
-    target: process.env.NODE_ENV === "production" ? "static" : "server",
+    target: "server",
     env: {
         trellisApiUrl: "/trellis-api"
     },

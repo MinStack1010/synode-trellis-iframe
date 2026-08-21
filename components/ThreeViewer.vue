@@ -74,7 +74,17 @@ export default {
         window.removeEventListener("resize", this.resize);
         this.renderer?.dispose();
     },
-    watch: { modelUrl(url) { if (url) this.loadModel(url); else this.clearModel(); } },
+    watch: {
+        modelUrl(url) {
+            if (!this.THREE) {
+                // THREE chưa init xong — lưu lại, initialize() sẽ load sau
+                this._pendingModelUrl = url || null;
+                return;
+            }
+            if (url) this.loadModel(url);
+            else this.clearModel();
+        }
+    },
     methods: {
         async initialize() {
             const THREE = await import("three");
@@ -99,7 +109,12 @@ export default {
             grid.position.y = -0.001;
             this.scene.add(grid);
             this.resize(); window.addEventListener("resize", this.resize);
-            if (this.modelUrl) this.loadModel(this.modelUrl);
+
+            // Load model nếu đã được set trong khi THREE đang init
+            const urlToLoad = this._pendingModelUrl !== undefined ? this._pendingModelUrl : this.modelUrl;
+            if (urlToLoad) this.loadModel(urlToLoad);
+            this._pendingModelUrl = undefined;
+
             const render = () => {
                 this.frame = requestAnimationFrame(render);
                 this.controls.update();

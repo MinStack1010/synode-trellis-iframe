@@ -223,7 +223,7 @@ body, .v-application {
     box-shadow: 0 12px 30px rgba(27, 37, 48, .1);
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
 }
 .action-menu .v-btn { width: 100%; height: 38px !important; min-height: 38px; justify-content: flex-start; color: #30343b !important; padding: 0 10px !important; }
 .action-menu small { display: block; margin-top: 3px; color: #94989e; }
@@ -271,6 +271,12 @@ body, .v-application {
 .advanced-modal h2 { margin: 5px 0 0; font-size: 20px; }
 .advanced-modal header .v-btn { width: 32px; height: 32px; border-radius: 7px; color: #6e737a !important; background: #f1f2f3 !important; box-shadow: none !important; font-size: 21px; }
 .advanced-content { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding: 22px 24px; overflow-y: auto; }
+@media (max-width: 860px) {
+    .advanced-content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+    .advanced-content { grid-template-columns: 1fr; }
+}
 .advanced-stage { padding: 14px; border: 1px solid #e7e9eb; border-radius: 11px; }
 .advanced-stage h3 { min-height: 34px; margin: 0 0 12px; color: #343940; font-size: 13px; line-height: 1.35; }
 .advanced-grid { display: grid; gap: 9px; }
@@ -310,7 +316,6 @@ body, .v-application {
     .workspace, .workspace-row { min-height: 0; }
     .control-panel { border-right: 0; border-bottom: 1px solid var(--line); }
     .preview-panel { min-height: 560px; height: 70vh; }
-    .advanced-content { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 599px) {

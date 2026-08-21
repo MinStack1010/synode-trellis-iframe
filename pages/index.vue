@@ -139,7 +139,7 @@
 										@click="generate"
 									>
 										<span v-if="generating" class="btn-spinner" aria-hidden="true" />
-										<template v-if="generating">
+										<span v-if="generating">
 											<template v-if="jobQueuePosition !== null">
 												{{
 													jobQueuePosition === 1
@@ -148,13 +148,12 @@
 												}}
 											</template>
 											<template v-else>
-												{{ $t("image3d.generating") }}
-												<template v-if="jobProgress > 0"> ({{ Math.round(jobProgress) }}%)</template>
+												{{ $t("image3d.generating") }}<template v-if="jobProgress > 0"> ({{ Math.round(jobProgress) }}%)</template>
 											</template>
-										</template>
-										<template v-else>
+										</span>
+										<span v-else>
 											{{ $t("image3d.generate") }}
-										</template>
+										</span>
 									</v-btn>
 								</span>
 							</template>
@@ -162,10 +161,15 @@
 						</v-tooltip>
 
 						<transition name="banner-slide">
-							<p v-if="serverBusy && !generating" class="server-busy-hint mt-2 mb-0" role="status">
+							<div v-if="serverBusy && !generating" class="server-busy-hint mt-2 mb-0" role="status">
 								<span class="server-busy-hint__dot" aria-hidden="true"></span>
-								{{ $t("image3d.serverBusyShort") }}
-							</p>
+								<span>
+									{{ $t("image3d.serverBusyShort") }}
+									<template v-if="serverEstimatedWait !== null">
+										— {{ serverEstimatedWait < 60 ? $t("image3d.lessThanMinute") : ('~' + Math.ceil(serverEstimatedWait / 60) + ' ' + $t("image3d.minutesLeft")) }}
+									</template>
+								</span>
+							</div>
 						</transition>
 					</aside>
 				</v-col>
@@ -389,6 +393,8 @@ export default {
 		this._queuePollInterval = null;
 	},
 	async mounted() {
+		const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
+
 		const savedPreview = localStorage.getItem("trellis_preview_image");
 		if (savedPreview) {
 			try {
@@ -417,7 +423,11 @@ export default {
 			}
 		}
 
-		const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
+		const savedGlbUrl = localStorage.getItem("trellis_last_glb_url");
+		if (savedGlbUrl) {
+			this.modelUrl = savedGlbUrl;
+			this.generated = true;
+		}
 
 		const savedJobId = localStorage.getItem("trellis_active_job_id");
 		if (savedJobId && apiUrl) {
@@ -426,22 +436,33 @@ export default {
 				if (check.ok) {
 					const status = await check.json();
 					if (status.status === "processing" || status.status === "queued") {
-						// Job vẫn đang chạy → resume poll
+						this.modelUrl = "";
+						this.generated = false;
 						this.jobId = savedJobId;
 						this.generating = true;
 						this.resumedFromStorage = true;
 						this.jobProgress = status.progress || 0;
+						this.jobQueuePosition = status.queue_position ?? null;
 						this.jobMessage = this.$t("image3d.resumeProgress");
 						await this.pollJobStatus(apiUrl);
 						return;
 					} else if (status.status === "completed" && status.result?.glb_url) {
 						this.modelUrl = status.result.glb_url;
 						this.generated = true;
-						this.resumedFromStorage = false;
+						localStorage.setItem("trellis_last_glb_url", status.result.glb_url);
 						localStorage.removeItem("trellis_active_job_id");
 						localStorage.removeItem("trellis_preview_image");
 						this._startQueuePoll();
 						return;
+					} else if (status.status === "failed") {
+						// Job failed (e.g. server restart cancelled it)
+						const reason = status.error || "";
+						const isRestart = reason.toLowerCase().includes("restart") || reason.toLowerCase().includes("interrupted");
+						this.showToast(
+							isRestart ? this.$t("image3d.restartFailed") : (status.error || this.$t("image3d.generationFailed")),
+							"error"
+						);
+						localStorage.removeItem("trellis_active_job_id");
 					}
 				}
 			} catch (_) {
@@ -472,6 +493,7 @@ export default {
 				reader.readAsDataURL(file);
 			} else {
 				localStorage.removeItem("trellis_preview_image");
+				localStorage.removeItem("trellis_last_glb_url");
 			}
 		},
 		openExtract() {
@@ -521,9 +543,11 @@ export default {
 
 			this.generating = true;
 			this.generated = false;
+			this.modelUrl = "";
 			this.jobProgress = 0;
 			this.jobMessage = "";
 			this.serverBusy = false;
+			localStorage.removeItem("trellis_last_glb_url");
 			this._stopQueuePoll();
 			if (this.randomizeSeed) this.seed = Math.floor(Math.random() * 4294967295).toString();
 
@@ -569,8 +593,12 @@ export default {
 		},
 		async pollJobStatus(apiUrl) {
 			const pollInterval = 2000;
-			const MAX_POLL_MS = 10 * 60 * 1000;
+			const MAX_POLL_MS = 15 * 60 * 1000;
+			const MAX_NETWORK_RETRIES = 7; 
+			const RETRY_DELAY_MS = 3000;
 			const deadline = Date.now() + MAX_POLL_MS;
+
+			let networkErrorCount = 0;
 
 			while (this.generating && !this._destroyed) {
 				if (Date.now() > deadline) {
@@ -578,19 +606,25 @@ export default {
 					this.generating = false;
 					this.resumedFromStorage = false;
 					localStorage.removeItem("trellis_active_job_id");
-					// Restart queue poll sau timeout
 					this._startQueuePoll();
 					return;
 				}
 				try {
 					const response = await fetch(`${apiUrl}/jobs/${this.jobId}`);
-					const status = await response.json();
-					
+
 					if (this._destroyed) return;
 
 					if (!response.ok) {
-						throw new Error(status.detail || "Failed to get job status");
+						// HTTP lỗi (4xx, 5xx) — không phải network blip
+						const body = await response.json().catch(() => ({}));
+						throw { isJobError: true, message: body.detail || `HTTP ${response.status}` };
 					}
+
+					const status = await response.json();
+
+					if (this._destroyed) return;
+
+					networkErrorCount = 0;
 
 					this.jobProgress = status.progress;
 					this.jobMessage = status.message;
@@ -600,6 +634,7 @@ export default {
 						if (this.modelUrl && this.modelUrl.startsWith("blob:")) URL.revokeObjectURL(this.modelUrl);
 						this.modelUrl = status.result.glb_url;
 						this.generated = true;
+						localStorage.setItem("trellis_last_glb_url", status.result.glb_url);
 						this.showToast(this.$t("image3d.generatedSuccess", { seconds: status.result.generation_time }));
 						this.generating = false;
 						this.resumedFromStorage = false;
@@ -609,18 +644,35 @@ export default {
 						this._startQueuePoll();
 						return;
 					} else if (status.status === "failed") {
-						throw new Error(status.error || "Generation failed");
+						throw { isJobError: true, message: status.error || "Generation failed" };
 					}
 
 					await new Promise(resolve => setTimeout(resolve, pollInterval));
+
 				} catch (error) {
 					if (this._destroyed) return;
-					this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
-					this.generating = false;
-					this.resumedFromStorage = false;
-					localStorage.removeItem("trellis_active_job_id");
-					this._startQueuePoll();
-					return;
+
+					if (error && error.isJobError) {
+						this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
+						this.generating = false;
+						this.resumedFromStorage = false;
+						localStorage.removeItem("trellis_active_job_id");
+						this._startQueuePoll();
+						return;
+					}
+
+					networkErrorCount++;
+					if (networkErrorCount >= MAX_NETWORK_RETRIES) {
+						this.showToast(this.$t("image3d.networkError"), "error");
+						this.generating = false;
+						this.resumedFromStorage = false;
+						localStorage.removeItem("trellis_active_job_id");
+						this._startQueuePoll();
+						return;
+					}
+
+					this.jobMessage = this.$t("image3d.reconnecting", { attempt: networkErrorCount, max: MAX_NETWORK_RETRIES });
+					await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
 				}
 			}
 		},
