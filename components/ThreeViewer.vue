@@ -3,20 +3,7 @@
         <!-- Empty state -->
         <div v-if="!modelUrl && !isLoading" class="viewer-empty d-flex flex-column align-center">
             <span class="viewer-cube">
-                <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-                    <!-- back faces -->
-                    <polygon points="40,8 72,24 72,56 40,72 8,56 8,24" fill="#e8eaed" stroke="#c8cdd3" stroke-width="1.2"/>
-                    <!-- top face -->
-                    <polygon points="40,8 72,24 40,40 8,24" fill="#f5f6f7" stroke="#c8cdd3" stroke-width="1.2"/>
-                    <!-- left face -->
-                    <polygon points="8,24 40,40 40,72 8,56" fill="#dde0e5" stroke="#c8cdd3" stroke-width="1.2"/>
-                    <!-- right face -->
-                    <polygon points="72,24 40,40 40,72 72,56" fill="#d0d4da" stroke="#c8cdd3" stroke-width="1.2"/>
-                    <!-- inner lines -->
-                    <line x1="40" y1="8" x2="40" y2="40" stroke="#b0b7bf" stroke-width="1" stroke-dasharray="3,2"/>
-                    <line x1="8" y1="24" x2="40" y2="40" stroke="#b0b7bf" stroke-width="1" stroke-dasharray="3,2"/>
-                    <line x1="72" y1="24" x2="40" y2="40" stroke="#b0b7bf" stroke-width="1" stroke-dasharray="3,2"/>
-                </svg>
+                <img src="/logo/synodeLogo.png" alt="Synode" />
             </span>
             <strong>{{ $t("image3d.viewerTitle") }}</strong>
             <p>{{ $t("image3d.viewerText") }}</p>
@@ -272,17 +259,18 @@ export default {
 .loader-fade-enter,
 .loader-fade-leave-to    { opacity: 0; }
 
-/* ── Viewer cube SVG icon ──────────────────────────────────── */
+/* ── Viewer logo empty state ───────────────────────────────── */
 .viewer-cube {
     display: block;
-    width: 64px;
-    height: 64px;
+    width: 72px;
+    height: 72px;
     margin-bottom: 12px;
-    opacity: 0.55;
+    opacity: 0.6;
 }
 
-.viewer-cube svg {
+.viewer-cube img {
     width: 100%;
     height: 100%;
+    object-fit: contain;
 }
 </style>
