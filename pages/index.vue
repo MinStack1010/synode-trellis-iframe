@@ -128,34 +128,9 @@
 							</div>
 						</transition>
 
-						<!-- Server busy banner: hiện cho máy B khi server đang bận -->
-						<transition name="banner-slide">
-							<div
-								v-if="serverBusy && !generating"
-								class="server-busy-banner mt-3"
-								role="status"
-							>
-								<div class="d-flex align-center">
-									<span class="resume-banner__dot server-busy-banner__dot" aria-hidden="true"></span>
-									<span class="server-busy-banner__title">{{ $t("image3d.serverBusyTitle") }}</span>
-								</div>
-								<p class="server-busy-banner__body mb-0 mt-1">
-									<template v-if="serverQueuedCount > 0">
-										{{ $t("image3d.serverBusyQueue", { count: serverQueuedCount }) }}
-									</template>
-									<template v-else>
-										{{ $t("image3d.serverBusyProcessing") }}
-									</template>
-									<template v-if="serverEstimatedWait !== null">
-										{{ $t("image3d.serverBusyEta", { seconds: Math.round(serverEstimatedWait) }) }}
-									</template>
-								</p>
-							</div>
-						</transition>
-
 						<!-- Generate button bọc trong tooltip khi đang busy -->
 						<v-tooltip
-							:disabled="!generating"
+							:disabled="!generating && !serverBusy"
 							top
 							max-width="260"
 							content-class="generate-tooltip"
@@ -168,7 +143,7 @@
 										block
 										height="52"
 										class="generate"
-										:disabled="!hasImage || generating"
+										:disabled="!hasImage || generating || (serverBusy && !generating)"
 										@click="generate"
 									>
 										<span v-if="generating" class="btn-spinner" aria-hidden="true" />
@@ -191,8 +166,16 @@
 									</v-btn>
 								</span>
 							</template>
-							<span>{{ $t("image3d.generateBusy") }}</span>
+							<span>{{ serverBusy && !generating ? $t("image3d.serverBusyShort") : $t("image3d.generateBusy") }}</span>
 						</v-tooltip>
+
+						<!-- Máy B: hint khi server đang bận -->
+						<transition name="banner-slide">
+							<p v-if="serverBusy && !generating" class="server-busy-hint mt-2 mb-0" role="status">
+								<span class="server-busy-hint__dot" aria-hidden="true"></span>
+								{{ $t("image3d.serverBusyShort") }}
+							</p>
+						</transition>
 					</aside>
 				</v-col>
 
@@ -787,30 +770,23 @@ export default {
     line-height: 0;
 }
 
-/* ── Server busy banner (máy B) ──────────────────────────────── */
-.server-busy-banner {
-    background: #fce4ec;
-    border: 1px solid #f48fb1;
-    border-radius: 8px;
-    padding: 10px 14px;
-    font-size: 12px;
-    color: #880e4f;
-    line-height: 1.4;
-}
-
-.server-busy-banner__dot {
-    background: #e91e63 !important;
-}
-
-.server-busy-banner__title {
-    font-weight: 600;
-    margin-left: 10px;
-}
-
-.server-busy-banner__body {
+/* ── Server busy hint (máy B) ────────────────────────────────── */
+.server-busy-hint {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     font-size: 11px;
-    color: #ad1457;
-    padding-left: 18px;
+    color: #e53935;
+    font-weight: 500;
+}
+
+.server-busy-hint__dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e53935;
+    animation: dot-pulse 1.4s ease-in-out infinite;
 }
 </style>
 
