@@ -1,31 +1,94 @@
 <template>
     <div ref="viewport" class="glb-viewport">
-        <div v-if="!modelUrl" class="viewer-empty d-flex flex-column align-center">
-            <span class="viewer-cube">◇</span>
+        <!-- Empty state -->
+        <div v-if="!modelUrl && !isLoading" class="viewer-empty d-flex flex-column align-center">
+            <span class="viewer-cube">
+                <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <!-- back faces -->
+                    <polygon points="40,8 72,24 72,56 40,72 8,56 8,24" fill="#e8eaed" stroke="#c8cdd3" stroke-width="1.2"/>
+                    <!-- top face -->
+                    <polygon points="40,8 72,24 40,40 8,24" fill="#f5f6f7" stroke="#c8cdd3" stroke-width="1.2"/>
+                    <!-- left face -->
+                    <polygon points="8,24 40,40 40,72 8,56" fill="#dde0e5" stroke="#c8cdd3" stroke-width="1.2"/>
+                    <!-- right face -->
+                    <polygon points="72,24 40,40 40,72 72,56" fill="#d0d4da" stroke="#c8cdd3" stroke-width="1.2"/>
+                    <!-- inner lines -->
+                    <line x1="40" y1="8" x2="40" y2="40" stroke="#b0b7bf" stroke-width="1" stroke-dasharray="3,2"/>
+                    <line x1="8" y1="24" x2="40" y2="40" stroke="#b0b7bf" stroke-width="1" stroke-dasharray="3,2"/>
+                    <line x1="72" y1="24" x2="40" y2="40" stroke="#b0b7bf" stroke-width="1" stroke-dasharray="3,2"/>
+                </svg>
+            </span>
             <strong>{{ $t("image3d.viewerTitle") }}</strong>
             <p>{{ $t("image3d.viewerText") }}</p>
         </div>
-        <div class="viewer-status"><span></span>{{ modelUrl ? $t("image3d.glbLoaded") : $t("image3d.viewerReady") }}</div>
-        <div class="stage-hint">{{ $t("image3d.hint") }}</div>
+
+        <!-- Synode-style loading overlay -->
+        <transition name="loader-fade">
+            <div v-if="isLoading" class="synode-loader-overlay">
+                <div class="synode-loader-content">
+                    <!-- Synode icon -->
+                    <div class="synode-loader-logo">
+                        <img src="/logo/icone.svg" alt="Synode" class="synode-icon" aria-hidden="true" />
+                    </div>
+
+                    <!-- Progress bar -->
+                    <div class="synode-loader-bar-wrap">
+                        <div class="synode-loader-bar" :style="{ width: progressWidth }"></div>
+                    </div>
+
+                    <!-- Label -->
+                    <p class="synode-loader-label">
+                        {{ loadingLabel }}
+                    </p>
+                </div>
+            </div>
+        </transition>
+
+        <div class="viewer-status">
+            <span></span>{{ modelUrl ? $t("image3d.glbLoaded") : $t("image3d.viewerReady") }}
+        </div>
     </div>
 </template>
 
 <script>
 export default {
     name: "ThreeViewer",
-    props: { modelUrl: { type: String, default: "" } },
-    data() { return { renderer: null, scene: null, camera: null, controls: null, frame: null }; },
+    props: {
+        modelUrl: { type: String, default: "" },
+        /** Pass true while the backend job is running so the loader shows immediately */
+        generating: { type: Boolean, default: false },
+        /** 0–100, forwarded from the parent polling loop */
+        progress: { type: Number, default: 0 }
+    },
+    data() {
+        return {
+            renderer: null, scene: null, camera: null, controls: null, frame: null,
+            /** true while THREE is loading the GLB file from the URL */
+            loadingModel: false
+        };
+    },
+    computed: {
+        isLoading() { return this.generating || this.loadingModel; },
+        /** Clamp 0–100 → 5–95 while generating, jump to 100 when loadingModel finishes */
+        progressWidth() {
+            if (this.loadingModel) return "95%";
+            if (this.progress > 0) return `${Math.min(Math.max(this.progress, 5), 94)}%`;
+            return "20%";
+        },
+        loadingLabel() {
+            if (this.loadingModel) return this.$t("image3d.loadingModel") || "Loading model…";
+            return this.$t("image3d.generating") || "Generating 3D model…";
+        }
+    },
     mounted() { this.initialize(); },
-    beforeDestroy()
-    {
+    beforeDestroy() {
         cancelAnimationFrame(this.frame);
         window.removeEventListener("resize", this.resize);
         this.renderer?.dispose();
     },
     watch: { modelUrl(url) { if (url) this.loadModel(url); else this.clearModel(); } },
     methods: {
-        async initialize()
-        {
+        async initialize() {
             const THREE = await import("three");
             const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
             this.THREE = THREE;
@@ -45,59 +108,61 @@ export default {
             const light = new THREE.DirectionalLight(0xffffff, 3);
             light.position.set(4, 6, 3); light.castShadow = true; this.scene.add(light);
             const grid = new THREE.GridHelper(10, 20, 0xd4d8dc, 0xe7e9eb);
-            // Keep the grid just below y=0, which is the asset ground plane.
             grid.position.y = -0.001;
             this.scene.add(grid);
             this.resize(); window.addEventListener("resize", this.resize);
             if (this.modelUrl) this.loadModel(this.modelUrl);
-            const render = () => { this.frame = requestAnimationFrame(render); this.controls.update(); this.renderer.render(this.scene, this.camera); };
+            const render = () => {
+                this.frame = requestAnimationFrame(render);
+                this.controls.update();
+                this.renderer.render(this.scene, this.camera);
+            };
             render();
         },
-        resize()
-        {
+        resize() {
             if (!this.renderer) return;
             const { width, height } = this.$refs.viewport.getBoundingClientRect();
-            this.camera.aspect = width / height; this.camera.updateProjectionMatrix(); this.renderer.setSize(width, height);
+            this.camera.aspect = width / height;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(width, height);
         },
-        async loadModel(url)
-        {
+        async loadModel(url) {
             if (!this.THREE) return;
-            const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
-            const gltf = await new GLTFLoader().loadAsync(url);
-            // A generation replaces the previous asset.  Reframe the camera so
-            // the new mesh cannot inherit an edge-on view from the old one.
-            this.clearModel();
-            this.model = gltf.scene;
-            this.placeOnGround(this.model);
-            this.scene.add(this.model);
-            this.frameModel(this.model);
+            this.loadingModel = true;
+            try {
+                const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+                const gltf = await new GLTFLoader().loadAsync(url);
+                this.clearModel();
+                this.model = gltf.scene;
+                this.placeOnGround(this.model);
+                this.scene.add(this.model);
+                this.frameModel(this.model);
+            } finally {
+                this.loadingModel = false;
+            }
         },
-        clearModel()
-        {
+        clearModel() {
             if (!this.model) return;
             this.model.traverse((node) => {
                 if (!node.isMesh) return;
                 node.geometry?.dispose();
                 const materials = Array.isArray(node.material) ? node.material : [node.material];
-                materials.filter(Boolean).forEach((material) => material.dispose());
+                materials.filter(Boolean).forEach((m) => m.dispose());
             });
             this.model.removeFromParent();
             this.model = null;
         },
-        placeOnGround(model)
-        {
+        placeOnGround(model) {
             const box = new this.THREE.Box3().setFromObject(model);
             if (!box.isEmpty()) model.position.y -= box.min.y;
         },
-        frameModel(model)
-        {
+        frameModel(model) {
             const box = new this.THREE.Box3().setFromObject(model);
             if (box.isEmpty()) return;
             const center = box.getCenter(new this.THREE.Vector3());
             const size = box.getSize(new this.THREE.Vector3());
             const maxDimension = Math.max(size.x, size.y, size.z, 0.01);
             const distance = (maxDimension / (2 * Math.tan(this.THREE.MathUtils.degToRad(this.camera.fov / 2)))) * 1.4;
-
             this.controls.target.copy(center);
             this.camera.position.set(center.x + distance, center.y + distance * 0.65, center.z + distance);
             this.camera.near = Math.max(distance / 100, 0.001);
@@ -108,3 +173,94 @@ export default {
     }
 };
 </script>
+
+<style scoped>
+/* ── Loading overlay ─────────────────────────────────────────── */
+.synode-loader-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.synode-loader-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    width: 280px;
+}
+
+/* Logo */
+.synode-loader-logo {
+    width: 110px;
+    height: 110px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: synode-float 2.8s ease-in-out infinite;
+}
+
+.synode-icon {
+    width: 100%;
+    height: 100%;
+    filter: drop-shadow(0 4px 16px rgba(40, 183, 194, 0.35));
+}
+
+/* Progress bar */
+.synode-loader-bar-wrap {
+    width: 100%;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.10);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.synode-loader-bar {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, #a6d6e2 0%, #28b7c2 60%, #71a4d8 100%);
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 0 10px rgba(40, 183, 194, 0.4);
+}
+
+/* Label */
+.synode-loader-label {
+    font-size: 13px;
+    color: rgba(0, 0, 0, 0.5);
+    letter-spacing: 0.03em;
+    margin: 0;
+    text-align: center;
+}
+
+/* Float animation for the logo */
+@keyframes synode-float {
+    0%, 100% { transform: translateY(0px); }
+    50%       { transform: translateY(-8px); }
+}
+
+/* Fade transition */
+.loader-fade-enter-active,
+.loader-fade-leave-active { transition: opacity 0.35s ease; }
+.loader-fade-enter,
+.loader-fade-leave-to    { opacity: 0; }
+
+/* ── Viewer cube SVG icon ──────────────────────────────────── */
+.viewer-cube {
+    display: block;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 12px;
+    opacity: 0.55;
+}
+
+.viewer-cube svg {
+    width: 100%;
+    height: 100%;
+}
+</style>

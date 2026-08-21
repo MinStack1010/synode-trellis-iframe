@@ -8,7 +8,7 @@
             <div class="wheel wheel-left"><i></i></div>
             <div class="wheel wheel-right"><i></i></div>
         </div>
-        <div class="stage-hint">{{ $t("image3d.hint") }}</div>
+        <!-- <div class="stage-hint">{{ $t("image3d.hint") }}</div> -->
         <div class="asset-status">
             <div class="status-title">{{ generated ? $t("image3d.generatedAsset") : $t("image3d.preview") }} <span :class="{ ready: generated }">{{ generated ? $t("image3d.ready") : $t("image3d.waiting") }}</span></div>
             <template v-if="generated"><p>{{ $t("image3d.pipeline") }} <b>1024 cascade</b></p><p>{{ $t("image3d.texture") }} <b>2048 px PBR</b></p><p>{{ $t("image3d.glbTarget") }} <b>500k faces</b></p></template>

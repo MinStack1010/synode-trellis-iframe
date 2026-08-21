@@ -13,9 +13,9 @@
 							{{ $t("image3d.title") }}
 						</h1>
 
-						<p class="intro mb-5">
+						<!-- <p class="intro mb-5">
 							{{ $t("image3d.description") }}
-						</p>
+						</p> -->
 
 						<image-upload @changed="onImageChanged" />
 
@@ -23,7 +23,7 @@
 
 						<div class="generation-title d-flex align-center justify-space-between">
 							<h2>{{ $t("image3d.generation") }}</h2>
-							<span>TRELLIS.2 · 4B</span>
+							<!-- <span>TRELLIS.2 · 4B</span> -->
 						</div>
 
 						<div
@@ -142,35 +142,14 @@
 					<section class="preview-panel w-100">
 						<v-row
 							no-gutters
-							class="preview-toolbar align-center justify-space-between px-4 py-3 px-md-6 py-md-3"
+							class="preview-toolbar align-center justify-end px-4 py-3 px-md-6 py-md-3"
 						>
-							<v-col
-								cols="auto"
-								class="preview-tabs-column"
-							>
-								<div class="preview-tabs d-flex">
-									<v-btn type="button" class="active">
-										{{ $t("image3d.preview") }}
-									</v-btn>
-
-									<v-btn
-										type="button"
-										:class="{
-											'is-inactive': !generated
-										}"
-										:aria-disabled="(!generated).toString()"
-										@click="openExtract"
-									>
-										{{ $t("image3d.extract") }}
-									</v-btn>
-								</div>
-							</v-col>
-
 							<v-col
 								cols="auto"
 								class="tool-actions-column"
 							>
 								<div class="tool-actions d-flex">
+									<!-- Export menu -->
 									<div class="menu-wrap">
 										<v-btn
 											type="button"
@@ -180,42 +159,33 @@
 											@click="toggleMenu('export')"
 										>
 											{{ $t("image3d.export") }}
-
-											<svg
-												class="menu-chevron"
-												:class="{
-													'is-open': exportOpen
-												}"
-												viewBox="0 0 24 24"
-												aria-hidden="true"
-											>
+											<svg class="menu-chevron" :class="{ 'is-open': exportOpen }" viewBox="0 0 24 24" aria-hidden="true">
 												<path d="m7 10 5 5 5-5" />
 											</svg>
 										</v-btn>
 
 										<transition name="menu">
-											<div
-												v-if="exportOpen"
-												id="export-menu"
-												class="action-menu"
-												role="menu"
-											>
-												<v-btn
-													type="button"
-													:disabled="!generated"
-													role="menuitem"
-													@click="downloadGlb"
-												>
+											<div v-if="exportOpen" id="export-menu" class="action-menu" role="menu">
+												<v-btn type="button" :disabled="!generated" role="menuitem" @click="downloadGlb">
 													{{ $t("image3d.exportGlb") }}
-
-													<!-- <small>
-														{{ $t("image3d.model") }}
-													</small> -->
 												</v-btn>
+												<div class="menu-item-wrap">
+													<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
+														{{ $t("image3d.exportFbx") }}
+														<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
+													</v-btn>
+												</div>
+												<div class="menu-item-wrap">
+													<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
+														{{ $t("image3d.exportUsdz") }}
+														<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
+													</v-btn>
+												</div>
 											</div>
 										</transition>
 									</div>
 
+									<!-- Publish menu -->
 									<div class="menu-wrap">
 										<v-btn
 											type="button"
@@ -225,50 +195,31 @@
 											@click="toggleMenu('publish')"
 										>
 											{{ $t("image3d.publish") }}
-
-											<svg
-												class="menu-chevron"
-												:class="{
-													'is-open': publishOpen
-												}"
-												viewBox="0 0 24 24"
-												aria-hidden="true"
-											>
+											<svg class="menu-chevron" :class="{ 'is-open': publishOpen }" viewBox="0 0 24 24" aria-hidden="true">
 												<path d="m7 10 5 5 5-5" />
 											</svg>
 										</v-btn>
 
 										<transition name="menu">
-											<div
-												v-if="publishOpen"
-												id="publish-menu"
-												class="action-menu publish-menu"
-												role="menu"
-											>
-												<strong>
-													{{ $t("image3d.publishAsset") }}
-												</strong>
-
-												<p>
-													{{
-														generated
-															? $t(
-																"image3d.readyToPublish"
-															)
-															: $t(
-																"image3d.generateBeforePublish"
-															)
-													}}
-												</p>
-
-												<v-btn
-													type="button"
-													:disabled="!generated"
-													role="menuitem"
-													@click="publish"
-												>
-													{{ $t("image3d.publishNow") }}
-												</v-btn>
+											<div v-if="publishOpen" id="publish-menu" class="action-menu" role="menu">
+												<div class="menu-item-wrap">
+													<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
+														{{ $t("image3d.publishToLibrary") }}
+														<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
+													</v-btn>
+												</div>
+												<div class="menu-item-wrap">
+													<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
+														{{ $t("image3d.sendToVisualizer") }}
+														<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
+													</v-btn>
+												</div>
+												<div class="menu-item-wrap">
+													<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
+														{{ $t("image3d.sendToBuilder") }}
+														<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
+													</v-btn>
+												</div>
 											</div>
 										</transition>
 									</div>
@@ -276,7 +227,11 @@
 							</v-col>
 						</v-row>
 
-						<three-viewer :model-url="modelUrl" />
+						<three-viewer
+							:model-url="modelUrl"
+							:generating="generating"
+							:progress="jobProgress"
+						/>
 					</section>
 				</v-col>
 			</v-row>
@@ -295,7 +250,7 @@
 			>
 				<header class="d-flex align-start justify-space-between">
 					<div>
-						<span class="eyebrow">TRELLIS.2 · 4B</span>
+						<!-- <span class="eyebrow">TRELLIS.2 · 4B</span> -->
 
 						<h2>
 							{{ $t("image3d.advanced") }}

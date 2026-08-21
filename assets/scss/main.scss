@@ -214,20 +214,42 @@ body, .v-application {
     z-index: 10;
     top: calc(100% + 8px);
     right: 0;
-    width: 180px;
+    width: 200px;
     padding: 6px;
     border: 1px solid #e5e7ea;
     border-radius: 10px;
     background: #fff;
     box-shadow: 0 12px 30px rgba(27, 37, 48, .1);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
-.action-menu .v-btn { width: 100%; height: auto !important; min-height: 40px; justify-content: flex-start; color: #30343b !important; }
+.action-menu .v-btn { width: 100%; height: 38px !important; min-height: 38px; justify-content: flex-start; color: #30343b !important; padding: 0 10px !important; }
 .action-menu small { display: block; margin-top: 3px; color: #94989e; }
-.publish-menu { width: 230px; padding: 14px; }
-.publish-menu strong { color: #24272d; }
-.publish-menu p { margin: 7px 0 12px; color: #777c84; line-height: 1.4; }
-.publish-menu .v-btn { justify-content: center; color: #fff !important; background: var(--primary) !important; }
-.publish-menu .v-btn--disabled { color: #999 !important; background: #ebedef !important; }
+
+/* "Coming soon" tooltip — hidden by default, shown on hover of wrapper */
+.menu-item-disabled.v-btn--disabled { opacity: 1 !important; color: #b0b5bc !important; width: 100% !important; }
+.action-menu .menu-item-wrap { position: relative; width: 100%; }
+.action-menu .menu-item-wrap .coming-soon {
+    display: none;
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 2px 7px;
+    border-radius: 4px;
+    color: #fff;
+    background: #454b55;
+    font-size: 10px;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 1;
+}
+.action-menu .menu-item-wrap:hover .coming-soon { display: block; }
+/* Vuetify sets pointer-events:none on disabled — wrapper still receives hover */
+.action-menu .menu-item-wrap { pointer-events: auto !important; }
+.action-menu .menu-item-wrap .v-btn--disabled { pointer-events: none; }
 .menu-enter-active, .menu-leave-active { transition: opacity .16s ease, transform .16s ease; }
 .menu-enter, .menu-leave-to { opacity: 0; transform: translateY(-5px); }
 
