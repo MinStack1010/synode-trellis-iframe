@@ -2,7 +2,7 @@
     <div ref="viewport" class="glb-viewport">
         <!-- Empty state -->
         <div v-if="!modelUrl && !isLoading" class="viewer-empty d-flex flex-column align-center">
-            <span class="viewer-cube">
+            <span>
                 <img src="/logo/synodeLogo.png" alt="Synode" />
             </span>
             <strong>{{ $t("image3d.viewerTitle") }}</strong>
@@ -208,7 +208,23 @@ export default {
 .synode-icon {
     width: 100%;
     height: 100%;
+    object-fit: contain;
     filter: drop-shadow(0 4px 16px rgba(40, 183, 194, 0.35));
+}
+
+/* Empty state logo */
+.viewer-empty span {
+    width: 74px;
+    height: 74px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.viewer-empty img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
 }
 
 /* Progress bar */
@@ -239,8 +255,12 @@ export default {
 
 /* Float animation for the logo */
 @keyframes synode-float {
-    0%, 100% { transform: translateY(0px); }
-    50%       { transform: translateY(-8px); }
+    0%, 100% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-8px);
+    }
 }
 
 /* Queue state: bar pulses to signal "waiting" */
@@ -249,28 +269,23 @@ export default {
 }
 
 @keyframes bar-pulse {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0.35; }
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.35;
+    }
 }
 
 /* Fade transition */
 .loader-fade-enter-active,
-.loader-fade-leave-active { transition: opacity 0.35s ease; }
+.loader-fade-leave-active {
+    transition: opacity 0.35s ease;
+}
+
 .loader-fade-enter,
-.loader-fade-leave-to    { opacity: 0; }
-
-/* ── Viewer logo empty state ───────────────────────────────── */
-.viewer-cube {
-    display: block;
-    width: 72px;
-    height: 72px;
-    margin-bottom: 12px;
-    opacity: 0.6;
+.loader-fade-leave-to {
+    opacity: 0;
 }
 
-.viewer-cube img {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
 </style>
