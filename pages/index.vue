@@ -17,7 +17,7 @@
 							{{ $t("image3d.description") }}
 						</p> -->
 
-						<image-upload @changed="onImageChanged" />
+						<image-upload ref="imageUpload" @changed="onImageChanged" />
 
 						<v-divider class="my-5" />
 
@@ -125,6 +125,31 @@
 							<div v-if="resumedFromStorage" class="resume-banner d-flex align-center mt-3" role="status">
 								<span class="resume-banner__dot" aria-hidden="true"></span>
 								<span>{{ $t("image3d.resumeBanner") }}</span>
+							</div>
+						</transition>
+
+						<!-- Server busy banner: hiện cho máy B khi server đang bận -->
+						<transition name="banner-slide">
+							<div
+								v-if="serverBusy && !generating"
+								class="server-busy-banner mt-3"
+								role="status"
+							>
+								<div class="d-flex align-center">
+									<span class="resume-banner__dot server-busy-banner__dot" aria-hidden="true"></span>
+									<span class="server-busy-banner__title">{{ $t("image3d.serverBusyTitle") }}</span>
+								</div>
+								<p class="server-busy-banner__body mb-0 mt-1">
+									<template v-if="serverQueuedCount > 0">
+										{{ $t("image3d.serverBusyQueue", { count: serverQueuedCount }) }}
+									</template>
+									<template v-else>
+										{{ $t("image3d.serverBusyProcessing") }}
+									</template>
+									<template v-if="serverEstimatedWait !== null">
+										{{ $t("image3d.serverBusyEta", { seconds: Math.round(serverEstimatedWait) }) }}
+									</template>
+								</p>
 							</div>
 						</transition>
 
@@ -380,6 +405,14 @@ export default {
 			resumedFromStorage: false,
 			/** Vị trí trong queue khi status = queued, null khi đang processing */
 			jobQueuePosition: null,
+			/** Bug #3 fix: flag để dừng poll khi component bị destroy */
+			_destroyed: false,
+			/** Trạng thái queue cho máy B (không có jobId riêng) */
+			serverBusy: false,
+			serverQueuedCount: 0,
+			serverEstimatedWait: null,
+			/** Interval ID để poll queue status cho máy B */
+			_queuePollInterval: null,
 				advanced: { sparseGuidance: 7.5, sparseRescale: .7, sparseSteps: 12, sparseT: 5, shapeGuidance: 7.5, shapeRescale: .5, shapeSteps: 12, shapeT: 3, materialGuidance: 1, materialRescale: 0, materialSteps: 12, materialT: 3 },
 				advancedStages: [
 					{ name: "image3d.stages.sparse", fields: [{ key: "sparseGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "sparseRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "sparseSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "sparseT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
@@ -389,22 +422,57 @@ export default {
 			};
 	},
 	async mounted() {
-		// Resume job nếu còn jobId trong localStorage (VD: user reload trang giữa chừng)
+		// Bug #4 fix: Restore preview image từ localStorage nếu có
+		const savedPreview = localStorage.getItem("trellis_preview_image");
+		if (savedPreview) {
+			// Chuyển base64 thành blob để ImageUpload component hiển thị
+			try {
+				const res = await fetch(savedPreview);
+				const blob = await res.blob();
+				const file = new File([blob], "restored-image.png", { type: blob.type || "image/png" });
+				// Gọi thủ công để set file vào ImageUpload child component
+				this.$nextTick(() => {
+					const uploader = this.$refs.imageUpload;
+					if (uploader && uploader.setFile) {
+						uploader.setFile(file);
+					}
+				});
+				this.selectedFile = file;
+				this.hasImage = true;
+			} catch (_) {
+				localStorage.removeItem("trellis_preview_image");
+			}
+		}
+
+		// Bug #1 fix: Resume job nếu còn jobId trong localStorage (VD: user reload trang giữa chừng)
 		const savedJobId = localStorage.getItem("trellis_active_job_id");
 		const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
 		if (savedJobId && apiUrl) {
 			try {
-				// Kiểm tra nhanh xem job còn active không trước khi resume
+				// Kiểm tra trạng thái job trước khi resume
 				const check = await fetch(`${apiUrl}/jobs/${savedJobId}`);
 				if (check.ok) {
 					const status = await check.json();
 					if (status.status === "processing" || status.status === "queued") {
+						// Job vẫn đang chạy → resume poll
+						// (pollJobStatus sẽ tự gọi _startQueuePoll khi kết thúc)
 						this.jobId = savedJobId;
 						this.generating = true;
 						this.resumedFromStorage = true;
 						this.jobProgress = status.progress || 0;
 						this.jobMessage = this.$t("image3d.resumeProgress");
 						await this.pollJobStatus(apiUrl);
+						return;
+					} else if (status.status === "completed" && status.result?.glb_url) {
+						// Bug #1 fix: Job đã hoàn thành trước khi reload → hiển thị model ngay
+						this.modelUrl = status.result.glb_url;
+						this.generated = true;
+						this.resumedFromStorage = false;
+						localStorage.removeItem("trellis_active_job_id");
+						// Job xong → không cần giữ ảnh nữa
+						localStorage.removeItem("trellis_preview_image");
+						// Setup queue poll để tiếp tục theo dõi server sau khi restore
+						this._startQueuePoll();
 						return;
 					}
 				}
@@ -413,15 +481,73 @@ export default {
 			}
 			localStorage.removeItem("trellis_active_job_id");
 		}
+
+		// Máy B (hoặc sau khi clear job cũ): poll queue status để hiện banner busy
+		if (apiUrl) {
+			await this.checkQueueStatus(apiUrl);
+			// Poll lại mỗi 5 giây để cập nhật trạng thái
+			this._queuePollInterval = setInterval(() => {
+				if (!this._destroyed && !this.generating) {
+					this.checkQueueStatus(apiUrl);
+				}
+			}, 5000);
+		}
 	},
 	methods: {
 		onImageChanged(file) {
 			this.selectedFile = file;
 			this.hasImage = Boolean(file);
+			// Bug #4 fix: Lưu preview image vào localStorage để restore sau khi reload
+			if (file) {
+				const reader = new FileReader();
+				reader.onload = (e) => {
+					try {
+						localStorage.setItem("trellis_preview_image", e.target.result);
+					} catch (_) {
+						// localStorage đầy hoặc không khả dụng — bỏ qua
+					}
+				};
+				reader.readAsDataURL(file);
+			} else {
+				localStorage.removeItem("trellis_preview_image");
+			}
 		},
 		openExtract() {
 			// "Extract GLB" tab — nếu đã có model thì download thẳng luôn
 			if (this.generated) this.downloadGlb();
+		},
+		/** Gọi GET /queue/status để máy B biết server đang bận hay không */
+		async checkQueueStatus(apiUrlOverride) {
+			const apiUrl = apiUrlOverride || (process.env.trellisApiUrl || "").replace(/\/$/, "");
+			if (!apiUrl) return;
+			try {
+				const res = await fetch(`${apiUrl}/queue/status`);
+				if (!res.ok) return;
+				const data = await res.json();
+				this.serverBusy = data.busy;
+				this.serverQueuedCount = data.queued_count || 0;
+				this.serverEstimatedWait = data.estimated_wait_seconds ?? null;
+			} catch (_) {
+				// Không thể reach API — giữ nguyên trạng thái hiện tại
+			}
+		},
+		/** Dừng interval poll queue */
+		_stopQueuePoll() {
+			if (this._queuePollInterval !== null) {
+				clearInterval(this._queuePollInterval);
+				this._queuePollInterval = null;
+			}
+		},
+		/** Bắt đầu lại interval poll queue sau khi job xong */
+		_startQueuePoll() {
+			this._stopQueuePoll();
+			const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
+			if (!apiUrl) return;
+			this._queuePollInterval = setInterval(() => {
+				if (!this._destroyed && !this.generating) {
+					this.checkQueueStatus(apiUrl);
+				}
+			}, 5000);
 		},
 		toggleMenu(menu) {
 			const isOpen = menu === "export" ? this.exportOpen : this.publishOpen;
@@ -440,6 +566,8 @@ export default {
 			this.generated = false;
 			this.jobProgress = 0;
 			this.jobMessage = "";
+			this.serverBusy = false; // Máy này đang generate → ẩn banner busy của người khác
+			this._stopQueuePoll(); // Không cần poll queue nữa, đang poll job status riêng
 			if (this.randomizeSeed) this.seed = Math.floor(Math.random() * 4294967295).toString();
 
 			try {
@@ -482,6 +610,8 @@ export default {
 				this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
 				this.generating = false;
 				localStorage.removeItem("trellis_active_job_id");
+				// Restart queue poll sau khi thất bại
+				this._startQueuePoll();
 			}
 		},
 		async pollJobStatus(apiUrl) {
@@ -489,18 +619,24 @@ export default {
 			const MAX_POLL_MS = 10 * 60 * 1000; // 10 minutes — guard against a job stuck in "processing"
 			const deadline = Date.now() + MAX_POLL_MS;
 
-			while (this.generating) {
+			// Bug #3 fix: dừng poll nếu component đã bị destroy
+			while (this.generating && !this._destroyed) {
 				if (Date.now() > deadline) {
 					this.showToast(this.$t("image3d.generationTimedOut"), "error");
 					this.generating = false;
 					this.resumedFromStorage = false;
 					localStorage.removeItem("trellis_active_job_id");
+					// Restart queue poll sau timeout
+					this._startQueuePoll();
 					return;
 				}
 				try {
 					const response = await fetch(`${apiUrl}/jobs/${this.jobId}`);
 					const status = await response.json();
 					
+					// Bug #3 fix: kiểm tra lại sau khi await (component có thể đã bị destroy)
+					if (this._destroyed) return;
+
 					if (!response.ok) {
 						throw new Error(status.detail || "Failed to get job status");
 					}
@@ -520,6 +656,10 @@ export default {
 						this.resumedFromStorage = false;
 						this.jobQueuePosition = null;
 						localStorage.removeItem("trellis_active_job_id");
+						// Job xong → không cần giữ ảnh trong localStorage nữa
+						localStorage.removeItem("trellis_preview_image");
+						// Restart queue poll để theo dõi trạng thái server
+						this._startQueuePoll();
 						return;
 					} else if (status.status === "failed") {
 						throw new Error(status.error || "Generation failed");
@@ -528,10 +668,13 @@ export default {
 					// Continue polling
 					await new Promise(resolve => setTimeout(resolve, pollInterval));
 				} catch (error) {
+					if (this._destroyed) return; // Bug #3 fix: bỏ qua nếu component đã destroy
 					this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
 					this.generating = false;
 					this.resumedFromStorage = false;
 					localStorage.removeItem("trellis_active_job_id");
+					// Restart queue poll để tiếp tục theo dõi server
+					this._startQueuePoll();
 					return;
 				}
 			}
@@ -572,7 +715,11 @@ export default {
 		}
 	},
 	beforeDestroy() {
+		// Bug #3 fix: set flag để dừng poll loop ngay lập tức
+		this._destroyed = true;
+		this._stopQueuePoll();
 		if (this.modelUrl && this.modelUrl.startsWith("blob:")) URL.revokeObjectURL(this.modelUrl);
+		window.clearTimeout(this.toastTimer);
 	}
 };
 </script>
@@ -614,6 +761,32 @@ export default {
 .generate-btn-wrap {
     /* Ensure the wrapper doesn't add extra spacing */
     line-height: 0;
+}
+
+/* ── Server busy banner (máy B) ──────────────────────────────── */
+.server-busy-banner {
+    background: #fce4ec;
+    border: 1px solid #f48fb1;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #880e4f;
+    line-height: 1.4;
+}
+
+.server-busy-banner__dot {
+    background: #e91e63 !important;
+}
+
+.server-busy-banner__title {
+    font-weight: 600;
+    margin-left: 10px;
+}
+
+.server-busy-banner__body {
+    font-size: 11px;
+    color: #ad1457;
+    padding-left: 18px;
 }
 </style>
 
