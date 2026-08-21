@@ -13,17 +13,12 @@
 							{{ $t("image3d.title") }}
 						</h1>
 
-						<p class="intro mb-5">
-							{{ $t("image3d.description") }}
-						</p>
-
-						<image-upload @changed="onImageChanged" />
+						<image-upload ref="imageUpload" @changed="onImageChanged" />
 
 						<v-divider class="my-5" />
 
 						<div class="generation-title d-flex align-center justify-space-between">
 							<h2>{{ $t("image3d.generation") }}</h2>
-							<span>TRELLIS.2 · 4B</span>
 						</div>
 
 						<div
@@ -120,21 +115,62 @@
 							<b>+</b>
 						</v-btn>
 
-						<v-btn
-							type="button"
-							block
-							height="52"
-							class="generate mt-3"
-							:disabled="!hasImage || generating"
-							:loading="generating"
-							@click="generate"
+						<transition name="banner-slide">
+							<div v-if="resumedFromStorage" class="resume-banner d-flex align-center mt-3" role="status">
+								<span class="resume-banner__dot" aria-hidden="true"></span>
+								<span>{{ $t("image3d.resumeBanner") }}</span>
+							</div>
+						</transition>
+
+						<v-tooltip
+							:disabled="!generating && !serverBusy"
+							top
+							max-width="260"
+							content-class="generate-tooltip"
 						>
-							{{
-								generating
-									? $t("image3d.generating")
-									: $t("image3d.generate")
-							}}
-						</v-btn>
+							<template #activator="{ on, attrs }">
+								<span v-bind="attrs" v-on="on" class="generate-btn-wrap mt-3 d-block">
+									<v-btn
+										type="button"
+										block
+										height="52"
+										class="generate"
+										:disabled="!hasImage || generating || (serverBusy && !generating)"
+										@click="generate"
+									>
+										<span v-if="generating" class="btn-spinner" aria-hidden="true" />
+										<span v-if="generating">
+											<template v-if="jobQueuePosition !== null">
+												{{
+													jobQueuePosition === 1
+														? $t("image3d.queuePositionNext")
+														: $t("image3d.queuePosition", { position: jobQueuePosition })
+												}}
+											</template>
+											<template v-else>
+												{{ $t("image3d.generating") }}<template v-if="jobProgress > 0"> ({{ Math.round(jobProgress) }}%)</template>
+											</template>
+										</span>
+										<span v-else>
+											{{ $t("image3d.generate") }}
+										</span>
+									</v-btn>
+								</span>
+							</template>
+							<span>{{ serverBusy && !generating ? $t("image3d.serverBusyShort") : $t("image3d.generateBusy") }}</span>
+						</v-tooltip>
+
+						<transition name="banner-slide">
+							<div v-if="serverBusy && !generating" class="server-busy-hint mt-2 mb-0" role="status">
+								<span class="server-busy-hint__dot" aria-hidden="true"></span>
+								<span>
+									{{ $t("image3d.serverBusyShort") }}
+									<template v-if="serverEstimatedWait !== null">
+										— {{ serverEstimatedWait < 60 ? $t("image3d.lessThanMinute") : ('~' + Math.ceil(serverEstimatedWait / 60) + ' ' + $t("image3d.minutesLeft")) }}
+									</template>
+								</span>
+							</div>
+						</transition>
 					</aside>
 				</v-col>
 
@@ -142,30 +178,8 @@
 					<section class="preview-panel w-100">
 						<v-row
 							no-gutters
-							class="preview-toolbar align-center justify-space-between px-4 py-3 px-md-6 py-md-3"
+							class="preview-toolbar align-center justify-end px-4 py-3 px-md-6 py-md-3"
 						>
-							<v-col
-								cols="auto"
-								class="preview-tabs-column"
-							>
-								<div class="preview-tabs d-flex">
-									<v-btn type="button" class="active">
-										{{ $t("image3d.preview") }}
-									</v-btn>
-
-									<v-btn
-										type="button"
-										:class="{
-											'is-inactive': !generated
-										}"
-										:aria-disabled="(!generated).toString()"
-										@click="openExtract"
-									>
-										{{ $t("image3d.extract") }}
-									</v-btn>
-								</div>
-							</v-col>
-
 							<v-col
 								cols="auto"
 								class="tool-actions-column"
@@ -180,38 +194,28 @@
 											@click="toggleMenu('export')"
 										>
 											{{ $t("image3d.export") }}
-
-											<svg
-												class="menu-chevron"
-												:class="{
-													'is-open': exportOpen
-												}"
-												viewBox="0 0 24 24"
-												aria-hidden="true"
-											>
+											<svg class="menu-chevron" :class="{ 'is-open': exportOpen }" viewBox="0 0 24 24" aria-hidden="true">
 												<path d="m7 10 5 5 5-5" />
 											</svg>
 										</v-btn>
 
 										<transition name="menu">
-											<div
-												v-if="exportOpen"
-												id="export-menu"
-												class="action-menu"
-												role="menu"
-											>
-												<v-btn
-													type="button"
-													:disabled="!generated"
-													role="menuitem"
-													@click="downloadGlb"
-												>
+											<div v-if="exportOpen" id="export-menu" class="action-menu" role="menu">
+												<v-btn type="button" :disabled="!generated" role="menuitem" @click="downloadGlb">
 													{{ $t("image3d.exportGlb") }}
-
-													<!-- <small>
-														{{ $t("image3d.model") }}
-													</small> -->
 												</v-btn>
+												<div class="menu-item-wrap">
+													<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
+														{{ $t("image3d.exportFbx") }}
+														<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
+													</v-btn>
+												</div>
+												<div class="menu-item-wrap">
+													<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
+														{{ $t("image3d.exportUsdz") }}
+														<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
+													</v-btn>
+												</div>
 											</div>
 										</transition>
 									</div>
@@ -225,50 +229,31 @@
 											@click="toggleMenu('publish')"
 										>
 											{{ $t("image3d.publish") }}
-
-											<svg
-												class="menu-chevron"
-												:class="{
-													'is-open': publishOpen
-												}"
-												viewBox="0 0 24 24"
-												aria-hidden="true"
-											>
+											<svg class="menu-chevron" :class="{ 'is-open': publishOpen }" viewBox="0 0 24 24" aria-hidden="true">
 												<path d="m7 10 5 5 5-5" />
 											</svg>
 										</v-btn>
 
 										<transition name="menu">
-											<div
-												v-if="publishOpen"
-												id="publish-menu"
-												class="action-menu publish-menu"
-												role="menu"
-											>
-												<strong>
-													{{ $t("image3d.publishAsset") }}
-												</strong>
-
-												<p>
-													{{
-														generated
-															? $t(
-																"image3d.readyToPublish"
-															)
-															: $t(
-																"image3d.generateBeforePublish"
-															)
-													}}
-												</p>
-
-												<v-btn
-													type="button"
-													:disabled="!generated"
-													role="menuitem"
-													@click="publish"
-												>
-													{{ $t("image3d.publishNow") }}
-												</v-btn>
+											<div v-if="publishOpen" id="publish-menu" class="action-menu" role="menu">
+												<div class="menu-item-wrap">
+													<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
+														{{ $t("image3d.publishToLibrary") }}
+														<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
+													</v-btn>
+												</div>
+												<div class="menu-item-wrap">
+													<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
+														{{ $t("image3d.sendToVisualizer") }}
+														<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
+													</v-btn>
+												</div>
+												<div class="menu-item-wrap">
+													<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
+														{{ $t("image3d.sendToBuilder") }}
+														<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
+													</v-btn>
+												</div>
 											</div>
 										</transition>
 									</div>
@@ -276,7 +261,12 @@
 							</v-col>
 						</v-row>
 
-						<three-viewer :model-url="modelUrl" />
+						<three-viewer
+							:model-url="modelUrl"
+							:generating="generating"
+							:progress="jobProgress"
+							:queue-position="jobQueuePosition"
+						/>
 					</section>
 				</v-col>
 			</v-row>
@@ -295,8 +285,6 @@
 			>
 				<header class="d-flex align-start justify-space-between">
 					<div>
-						<span class="eyebrow">TRELLIS.2 · 4B</span>
-
 						<h2>
 							{{ $t("image3d.advanced") }}
 						</h2>
@@ -364,9 +352,10 @@
 			<div
 				v-if="toastMessage"
 				class="app-toast d-flex align-center"
-				role="status"
+				:class="{ 'app-toast--error': toastType === 'error' }"
+				:role="toastType === 'error' ? 'alert' : 'status'"
 			>
-				<span>✓</span>
+				<span aria-hidden="true">{{ toastType === 'error' ? '✕' : '✓' }}</span>
 				{{ toastMessage }}
 			</div>
 		</transition>
@@ -383,23 +372,161 @@ export default {
 	components: { AppHeader, ImageUpload, ThreeViewer },
 	data() {
 			return {
-						hasImage: false, selectedFile: null, generating: false, generated: false, seed: "284739", texture: "2048 px", decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: ["1024 px", "2048 px", "4096 px"], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
-			advancedOpen: false, exportOpen: false, publishOpen: false, modelUrl: "", settingsApplied: false, toastMessage: "", toastTimer: null,
-			advanced: { sparseGuidance: 7.5, sparseRescale: .7, sparseSteps: 12, sparseT: 5, shapeGuidance: 7.5, shapeRescale: .5, shapeSteps: 12, shapeT: 3, materialGuidance: 1, materialRescale: 0, materialSteps: 12, materialT: 3 },
-			advancedStages: [
-				{ name: "image3d.stages.sparse", fields: [{ key: "sparseGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "sparseRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "sparseSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "sparseT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
-				{ name: "image3d.stages.shape", fields: [{ key: "shapeGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "shapeRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "shapeSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "shapeT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
-				{ name: "image3d.stages.material", fields: [{ key: "materialGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "materialRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "materialSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "materialT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] }
-			]
-		};
+				hasImage: false, selectedFile: null, generating: false, generated: false, seed: "284739", texture: 2048, decimationTarget: 500000, output: "PBR mesh · GLB", resolution: "1024", resolutions: ["512", "1024", "1536"], textureOptions: [{ text: "1024 px", value: 1024 }, { text: "2048 px", value: 2048 }, { text: "4096 px", value: 4096 }], decimationOptions: [{ text: this.$t("image3d.faces", { count: "250,000" }), value: 250000 }, { text: this.$t("image3d.faces", { count: "500,000" }), value: 500000 }, { text: this.$t("image3d.faces", { count: "1,000,000" }), value: 1000000 }], outputOptions: ["PBR mesh · GLB"], randomizeSeed: false,
+				advancedOpen: false, exportOpen: false, publishOpen: false, modelUrl: "", settingsApplied: false, toastMessage: "", toastType: "success", toastTimer: null,
+				jobId: null, jobProgress: 0, jobMessage: "",
+				resumedFromStorage: false,
+				jobQueuePosition: null,
+				serverBusy: false,
+				serverQueuedCount: 0,
+				serverEstimatedWait: null,
+				advanced: { sparseGuidance: 7.5, sparseRescale: .7, sparseSteps: 12, sparseT: 5, shapeGuidance: 7.5, shapeRescale: .5, shapeSteps: 12, shapeT: 3, materialGuidance: 1, materialRescale: 0, materialSteps: 12, materialT: 3 },
+				advancedStages: [
+					{ name: "image3d.stages.sparse", fields: [{ key: "sparseGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "sparseRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "sparseSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "sparseT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
+					{ name: "image3d.stages.shape", fields: [{ key: "shapeGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "shapeRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "shapeSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "shapeT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] },
+					{ name: "image3d.stages.material", fields: [{ key: "materialGuidance", label: "image3d.fields.guidance", min: 1, max: 10, step: .1 }, { key: "materialRescale", label: "image3d.fields.guidanceRescale", min: 0, max: 1, step: .01 }, { key: "materialSteps", label: "image3d.fields.samplingSteps", min: 1, max: 50, step: 1 }, { key: "materialT", label: "image3d.fields.rescaleT", min: 1, max: 6, step: .1 }] }
+				]
+			};
+	},
+	created() {
+		this._destroyed = false;
+		this._queuePollInterval = null;
+	},
+	async mounted() {
+		const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
+
+		const savedPreview = localStorage.getItem("trellis_preview_image");
+		if (savedPreview) {
+			try {
+				const mimeMatch = savedPreview.match(/^data:([^;]+);/);
+				const mimeType = mimeMatch ? mimeMatch[1] : "image/png";
+				const base64Data = savedPreview.split(",")[1];
+				if (base64Data) {
+					const byteChars = atob(base64Data);
+					const byteArray = new Uint8Array(byteChars.length);
+					for (let i = 0; i < byteChars.length; i++) {
+						byteArray[i] = byteChars.charCodeAt(i);
+					}
+					const blob = new Blob([byteArray], { type: mimeType });
+					const file = new File([blob], "restored-image.png", { type: mimeType });
+					this.selectedFile = file;
+					this.hasImage = true;
+					this.$nextTick(() => {
+						const uploader = this.$refs.imageUpload;
+						if (uploader && uploader.setFile) {
+							uploader.setFile(file);
+						}
+					});
+				}
+			} catch (_) {
+				localStorage.removeItem("trellis_preview_image");
+			}
+		}
+
+		const savedGlbUrl = localStorage.getItem("trellis_last_glb_url");
+		if (savedGlbUrl) {
+			this.modelUrl = savedGlbUrl;
+			this.generated = true;
+		}
+
+		const savedJobId = localStorage.getItem("trellis_active_job_id");
+		if (savedJobId && apiUrl) {
+			try {
+				const check = await fetch(`${apiUrl}/jobs/${savedJobId}`);
+				if (check.ok) {
+					const status = await check.json();
+					if (status.status === "processing" || status.status === "queued") {
+						this.modelUrl = "";
+						this.generated = false;
+						this.jobId = savedJobId;
+						this.generating = true;
+						this.resumedFromStorage = true;
+						this.jobProgress = status.progress || 0;
+						this.jobQueuePosition = status.queue_position ?? null;
+						this.jobMessage = this.$t("image3d.resumeProgress");
+						await this.pollJobStatus(apiUrl);
+						return;
+					} else if (status.status === "completed" && status.result?.glb_url) {
+						this.modelUrl = status.result.glb_url;
+						this.generated = true;
+						localStorage.setItem("trellis_last_glb_url", status.result.glb_url);
+						localStorage.removeItem("trellis_active_job_id");
+						localStorage.removeItem("trellis_preview_image");
+						this._startQueuePoll();
+						return;
+					} else if (status.status === "failed") {
+						// Job failed (e.g. server restart cancelled it)
+						const reason = status.error || "";
+						const isRestart = reason.toLowerCase().includes("restart") || reason.toLowerCase().includes("interrupted");
+						this.showToast(
+							isRestart ? this.$t("image3d.restartFailed") : (status.error || this.$t("image3d.generationFailed")),
+							"error"
+						);
+						localStorage.removeItem("trellis_active_job_id");
+					}
+				}
+			} catch (_) {
+			}
+			localStorage.removeItem("trellis_active_job_id");
+		}
+
+		if (apiUrl) {
+			await this.checkQueueStatus(apiUrl);
+			this._startQueuePoll();
+		}
 	},
 	methods: {
 		onImageChanged(file) {
 			this.selectedFile = file;
 			this.hasImage = Boolean(file);
+			if (file) {
+				const reader = new FileReader();
+				reader.onload = (e) => {
+					try {
+						localStorage.setItem("trellis_preview_image", e.target.result);
+					} catch (err) {
+						console.warn("localStorage full:", err);
+						localStorage.removeItem("trellis_active_job_id");
+						localStorage.removeItem("trellis_preview_image");
+					}
+				};
+				reader.readAsDataURL(file);
+			} else {
+				localStorage.removeItem("trellis_preview_image");
+				localStorage.removeItem("trellis_last_glb_url");
+			}
 		},
 		openExtract() {
-			if (this.generated) this.exportOpen = true;
+			if (this.generated) this.downloadGlb();
+		},
+		async checkQueueStatus(apiUrlOverride) {
+			const apiUrl = apiUrlOverride || (process.env.trellisApiUrl || "").replace(/\/$/, "");
+			if (!apiUrl) return;
+			try {
+				const res = await fetch(`${apiUrl}/queue/status`);
+				if (!res.ok) return;
+				const data = await res.json();
+				this.serverBusy = data.busy;
+				this.serverQueuedCount = data.queued_count || 0;
+				this.serverEstimatedWait = data.estimated_wait_seconds ?? null;
+			} catch (_) {
+			}
+		},
+		_stopQueuePoll() {
+			if (this._queuePollInterval !== null) {
+				clearInterval(this._queuePollInterval);
+				this._queuePollInterval = null;
+			}
+		},
+		_startQueuePoll() {
+			this._stopQueuePoll();
+			const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
+			if (!apiUrl) return;
+			this._queuePollInterval = setInterval(() => {
+				if (!this._destroyed && !this.generating) {
+					this.checkQueueStatus(apiUrl);
+				}
+			}, 5000);
 		},
 		toggleMenu(menu) {
 			const isOpen = menu === "export" ? this.exportOpen : this.publishOpen;
@@ -407,15 +534,21 @@ export default {
 			this.publishOpen = menu === "publish" && !isOpen;
 		},
 		async generate() {
-			if (!this.selectedFile) return;
+			if (!this.selectedFile || this.generating) return;
 			const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
 			if (!apiUrl) {
-				this.showToast(this.$t("image3d.apiNotConfigured"));
+			this.showToast(this.$t("image3d.apiNotConfigured"), "error");
 				return;
 			}
 
 			this.generating = true;
 			this.generated = false;
+			this.modelUrl = "";
+			this.jobProgress = 0;
+			this.jobMessage = "";
+			this.serverBusy = false;
+			localStorage.removeItem("trellis_last_glb_url");
+			this._stopQueuePoll();
 			if (this.randomizeSeed) this.seed = Math.floor(Math.random() * 4294967295).toString();
 
 			try {
@@ -427,7 +560,7 @@ export default {
 						seed: Number(this.seed) || 0,
 						pipeline_type: this.resolution === "512" ? "512" : `${this.resolution}_cascade`,
 						decimation_target: this.decimationTarget,
-						texture_size: Number.parseInt(this.texture, 10),
+						texture_size: this.texture,
 						ss_guidance_strength: this.advanced.sparseGuidance,
 						ss_guidance_rescale: this.advanced.sparseRescale,
 						ss_sampling_steps: this.advanced.sparseSteps,
@@ -442,32 +575,130 @@ export default {
 						tex_slat_rescale_t: this.advanced.materialT
 					})
 				});
-				const result = await response.json();
-				if (!response.ok) throw new Error(result.detail || "Generation failed");
+				const jobResult = await response.json();
+				if (!response.ok) throw new Error(jobResult.detail || "Job creation failed");
 
-				if (this.modelUrl) URL.revokeObjectURL(this.modelUrl);
-				this.modelUrl = this.base64ToObjectUrl(result.glb, "model/gltf-binary");
-				this.generated = true;
-				this.showToast(this.$t("image3d.generatedSuccess", { seconds: result.generation_time }));
+				this.jobId = jobResult.job_id;
+				this.jobMessage = "Job queued";
+				localStorage.setItem("trellis_active_job_id", this.jobId);
+
+				await this.pollJobStatus(apiUrl);
+
 			} catch (error) {
-				this.showToast(error.message || this.$t("image3d.generationFailed"));
-			} finally {
+				this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
 				this.generating = false;
+				localStorage.removeItem("trellis_active_job_id");
+				this._startQueuePoll();
 			}
 		},
-		downloadGlb() {
+		async pollJobStatus(apiUrl) {
+			const pollInterval = 2000;
+			const MAX_POLL_MS = 15 * 60 * 1000;
+			const MAX_NETWORK_RETRIES = 7; 
+			const RETRY_DELAY_MS = 3000;
+			const deadline = Date.now() + MAX_POLL_MS;
+
+			let networkErrorCount = 0;
+
+			while (this.generating && !this._destroyed) {
+				if (Date.now() > deadline) {
+					this.showToast(this.$t("image3d.generationTimedOut"), "error");
+					this.generating = false;
+					this.resumedFromStorage = false;
+					localStorage.removeItem("trellis_active_job_id");
+					this._startQueuePoll();
+					return;
+				}
+				try {
+					const response = await fetch(`${apiUrl}/jobs/${this.jobId}`);
+
+					if (this._destroyed) return;
+
+					if (!response.ok) {
+						// HTTP lỗi (4xx, 5xx) — không phải network blip
+						const body = await response.json().catch(() => ({}));
+						throw { isJobError: true, message: body.detail || `HTTP ${response.status}` };
+					}
+
+					const status = await response.json();
+
+					if (this._destroyed) return;
+
+					networkErrorCount = 0;
+
+					this.jobProgress = status.progress;
+					this.jobMessage = status.message;
+					this.jobQueuePosition = status.queue_position ?? null;
+
+					if (status.status === "completed") {
+						if (this.modelUrl && this.modelUrl.startsWith("blob:")) URL.revokeObjectURL(this.modelUrl);
+						this.modelUrl = status.result.glb_url;
+						this.generated = true;
+						localStorage.setItem("trellis_last_glb_url", status.result.glb_url);
+						this.showToast(this.$t("image3d.generatedSuccess", { seconds: status.result.generation_time }));
+						this.generating = false;
+						this.resumedFromStorage = false;
+						this.jobQueuePosition = null;
+						localStorage.removeItem("trellis_active_job_id");
+						localStorage.removeItem("trellis_preview_image");
+						this._startQueuePoll();
+						return;
+					} else if (status.status === "failed") {
+						throw { isJobError: true, message: status.error || "Generation failed" };
+					}
+
+					await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+				} catch (error) {
+					if (this._destroyed) return;
+
+					if (error && error.isJobError) {
+						this.showToast(error.message || this.$t("image3d.generationFailed"), "error");
+						this.generating = false;
+						this.resumedFromStorage = false;
+						localStorage.removeItem("trellis_active_job_id");
+						this._startQueuePoll();
+						return;
+					}
+
+					networkErrorCount++;
+					if (networkErrorCount >= MAX_NETWORK_RETRIES) {
+						this.showToast(this.$t("image3d.networkError"), "error");
+						this.generating = false;
+						this.resumedFromStorage = false;
+						localStorage.removeItem("trellis_active_job_id");
+						this._startQueuePoll();
+						return;
+					}
+
+					this.jobMessage = this.$t("image3d.reconnecting", { attempt: networkErrorCount, max: MAX_NETWORK_RETRIES });
+					await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+				}
+			}
+		},
+		async downloadGlb() {
 			this.exportOpen = false;
 			if (!this.modelUrl) {
-				this.showToast(this.$t("image3d.generateBeforeExport"));
+				this.showToast(this.$t("image3d.generateBeforeExport"), "error");
 				return;
 			}
-			const link = document.createElement("a");
-			link.href = this.modelUrl;
-			link.download = "trellis2-model.glb";
-			link.style.display = "none";
-			document.body.appendChild(link);
-			link.click();
-			link.remove();
+			try {
+				const res = await fetch(this.modelUrl);
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				const blob = await res.blob();
+				const blobUrl = URL.createObjectURL(blob);
+				const link = document.createElement("a");
+				link.href = blobUrl;
+				link.download = "trellis2-model.glb";
+				link.style.display = "none";
+				document.body.appendChild(link);
+				link.click();
+				link.remove();
+				URL.revokeObjectURL(blobUrl);
+			} catch (_) {
+				window.open(this.modelUrl, "_blank", "noopener");
+				this.showToast(this.$t("image3d.downloadFallback"), "success");
+			}
 		},
 		fileToBase64(file) {
 			return new Promise((resolve, reject) => {
@@ -477,26 +708,87 @@ export default {
 				reader.readAsDataURL(file);
 			});
 		},
-		base64ToObjectUrl(value, type) {
-			const binary = atob(value);
-			const bytes = new Uint8Array(binary.length);
-			for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-			return URL.createObjectURL(new Blob([bytes], { type }));
-		},
 		publish() { this.publishOpen = false; },
 		applySettings() {
 			this.settingsApplied = true;
 			this.advancedOpen = false;
 			this.showToast(this.$t("image3d.settingsApplied"));
 		},
-		showToast(message) {
+		showToast(message, type = "success") {
 			this.toastMessage = message;
+			this.toastType = type;
 			window.clearTimeout(this.toastTimer);
 			this.toastTimer = window.setTimeout(() => { this.toastMessage = ""; }, 3200);
 		}
 	},
 	beforeDestroy() {
-		if (this.modelUrl) URL.revokeObjectURL(this.modelUrl);
+		this._destroyed = true;
+		this._stopQueuePoll();
+		if (this.modelUrl && this.modelUrl.startsWith("blob:")) URL.revokeObjectURL(this.modelUrl);
+		window.clearTimeout(this.toastTimer);
 	}
 };
 </script>
+
+<style scoped>
+.resume-banner {
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #795548;
+    gap: 10px;
+    line-height: 1.4;
+}
+
+.resume-banner__dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #f9a825;
+    animation: dot-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: 0.4; transform: scale(0.75); }
+}
+
+.banner-slide-enter-active,
+.banner-slide-leave-active { transition: all 0.3s ease; }
+.banner-slide-enter,
+.banner-slide-leave-to    { opacity: 0; transform: translateY(-6px); }
+
+.generate-btn-wrap {
+    line-height: 0;
+}
+
+.server-busy-hint {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    color: #e53935;
+    font-weight: 500;
+}
+
+.server-busy-hint__dot {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #e53935;
+    animation: dot-pulse 1.4s ease-in-out infinite;
+}
+.generate-tooltip {
+    background: #37474f !important;
+    color: #fff !important;
+    font-size: 12px !important;
+    line-height: 1.5 !important;
+    padding: 8px 12px !important;
+    border-radius: 6px !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18) !important;
+}
+</style>

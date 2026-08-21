@@ -1,8 +1,8 @@
 export default {
     ssr: false,
-    target: "static",
+    target: "server",
     env: {
-        trellisApiUrl: process.env.TRELLIS_API_URL || "/trellis-api"
+        trellisApiUrl: "/trellis-api"
     },
     head: {
         title: "Image to 3D | Synode",

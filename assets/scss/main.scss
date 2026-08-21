@@ -162,12 +162,13 @@ body, .v-application {
 .advanced b { margin-left: auto; font-size: 17px; }
 .advanced.configured { border-color: #a6d8cb !important; background: #f2fbf8 !important; }
 .advanced small { margin-left: 6px; color: #31846a; font-size: 10px; }
-.generate { border-radius: 8px !important; color: #fff !important; background: var(--primary) !important; font-size: 13px; font-weight: 600; }
+.generate { border-radius: 8px !important; color: #fff !important; background: var(--primary) !important; font-size: 13px; font-weight: 600; overflow: hidden; }
+.generate .v-btn__content { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .generate.v-btn--disabled, .generate:disabled { color: #d0d2d5 !important; background: #f0f0f1 !important; opacity: 1; }
 
 .preview-column { min-width: 0; }
 .preview-panel { position: relative; width: 100%; min-width: 0; min-height: calc(100vh - 56px); background: var(--canvas); }
-.preview-toolbar { position: relative; z-index: 3; min-height: 64px; }
+.preview-toolbar { position: relative; z-index: 30; min-height: 64px; }
 .preview-tabs-column, .tool-actions-column { flex-grow: 0; }
 .preview-tabs {
     padding: 4px;
@@ -214,24 +215,46 @@ body, .v-application {
     z-index: 10;
     top: calc(100% + 8px);
     right: 0;
-    width: 180px;
+    width: 200px;
     padding: 6px;
     border: 1px solid #e5e7ea;
     border-radius: 10px;
     background: #fff;
     box-shadow: 0 12px 30px rgba(27, 37, 48, .1);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
 }
-.action-menu .v-btn { width: 100%; height: auto !important; min-height: 40px; justify-content: flex-start; color: #30343b !important; }
+.action-menu .v-btn { width: 100%; height: 38px !important; min-height: 38px; justify-content: flex-start; color: #30343b !important; padding: 0 10px !important; }
 .action-menu small { display: block; margin-top: 3px; color: #94989e; }
-.publish-menu { width: 230px; padding: 14px; }
-.publish-menu strong { color: #24272d; }
-.publish-menu p { margin: 7px 0 12px; color: #777c84; line-height: 1.4; }
-.publish-menu .v-btn { justify-content: center; color: #fff !important; background: var(--primary) !important; }
-.publish-menu .v-btn--disabled { color: #999 !important; background: #ebedef !important; }
+
+/* "Coming soon" tooltip — hidden by default, shown on hover of wrapper */
+.menu-item-disabled.v-btn--disabled { opacity: 1 !important; color: #b0b5bc !important; width: 100% !important; }
+.action-menu .menu-item-wrap { position: relative; width: 100%; }
+.action-menu .menu-item-wrap .coming-soon {
+    display: none;
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 2px 7px;
+    border-radius: 4px;
+    color: #fff;
+    background: #454b55;
+    font-size: 10px;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 1;
+}
+.action-menu .menu-item-wrap:hover .coming-soon { display: block; }
+/* Vuetify sets pointer-events:none on disabled — wrapper still receives hover */
+.action-menu .menu-item-wrap { pointer-events: auto !important; }
+.action-menu .menu-item-wrap .v-btn--disabled { pointer-events: none; }
 .menu-enter-active, .menu-leave-active { transition: opacity .16s ease, transform .16s ease; }
 .menu-enter, .menu-leave-to { opacity: 0; transform: translateY(-5px); }
 
-.glb-viewport { position: absolute; inset: 64px 0 0; overflow: hidden; background: #f6f7f8; }
+.glb-viewport { position: absolute; inset: 64px 0 0; overflow: hidden; background: #f6f7f8; isolation: isolate; }
 .glb-viewport canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .viewer-empty { position: absolute; z-index: 1; top: 49%; left: 50%; transform: translate(-50%, -50%); color: #66707a; pointer-events: none; }
 .viewer-empty strong { margin-top: 10px; color: #454b53; font-size: 15px; }
@@ -248,6 +271,12 @@ body, .v-application {
 .advanced-modal h2 { margin: 5px 0 0; font-size: 20px; }
 .advanced-modal header .v-btn { width: 32px; height: 32px; border-radius: 7px; color: #6e737a !important; background: #f1f2f3 !important; box-shadow: none !important; font-size: 21px; }
 .advanced-content { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; padding: 22px 24px; overflow-y: auto; }
+@media (max-width: 860px) {
+    .advanced-content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+    .advanced-content { grid-template-columns: 1fr; }
+}
 .advanced-stage { padding: 14px; border: 1px solid #e7e9eb; border-radius: 11px; }
 .advanced-stage h3 { min-height: 34px; margin: 0 0 12px; color: #343940; font-size: 13px; line-height: 1.35; }
 .advanced-grid { display: grid; gap: 9px; }
@@ -261,6 +290,11 @@ body, .v-application {
 
 .app-toast { position: fixed; z-index: 70; right: 24px; bottom: 24px; gap: 9px; padding: 13px 16px; border-radius: 10px; color: #fff; background: #18221f; box-shadow: 0 10px 30px rgba(0, 0, 0, .2); font-size: 13px; font-weight: 600; }
 .app-toast span { display: grid; width: 19px; height: 19px; place-items: center; border-radius: 50%; color: #153b2d; background: #75d5b4; }
+.app-toast--error { background: #2a1414; }
+.app-toast--error span { color: #5c1a1a; background: #f28b82; }
+
+.btn-spinner { display: inline-block; width: 14px; height: 14px; margin-right: 7px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: btn-spin .7s linear infinite; flex-shrink: 0; }
+@keyframes btn-spin { to { transform: rotate(360deg); } }
 .toast-enter-active, .toast-leave-active { transition: opacity .2s ease, transform .2s ease; }
 .toast-enter, .toast-leave-to { opacity: 0; transform: translateY(8px); }
 
@@ -282,7 +316,6 @@ body, .v-application {
     .workspace, .workspace-row { min-height: 0; }
     .control-panel { border-right: 0; border-bottom: 1px solid var(--line); }
     .preview-panel { min-height: 560px; height: 70vh; }
-    .advanced-content { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 599px) {
