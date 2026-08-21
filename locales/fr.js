@@ -37,6 +37,7 @@ export default {
         sendToVisualizer: "Envoyer au Visualiseur",
         sendToBuilder: "Envoyer au Builder",
         generateBeforeExport: "Générez un asset 3D avant d’exporter le GLB.",
+        downloadFallback: "Ouverture du modèle dans un nouvel onglet — enregistrez manuellement si nécessaire.",
         generateBusy: "Une génération est déjà en cours. Un seul modèle peut être généré à la fois — veuillez patienter jusqu'à la fin du job en cours.",
         generateBusyShort: "Génération en cours — veuillez patienter",
         resumeBanner: "Un job de génération est toujours en cours depuis votre session précédente.",

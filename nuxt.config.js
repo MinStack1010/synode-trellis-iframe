@@ -1,8 +1,12 @@
 export default {
     ssr: false,
-    target: "static",
+    // target: "server" khi dev (để serverMiddleware proxy hoạt động),
+    //         "static" khi production (nuxt generate → nginx serve)
+    target: process.env.NODE_ENV === "production" ? "static" : "server",
     env: {
-        trellisApiUrl: process.env.TRELLIS_API_URL || "/trellis-api"
+        // Proxy path được nginx forward đến http://34.42.10.21:8080
+        // Khi dev local: serverMiddleware forward đến TRELLIS_PROXY_TARGET
+        trellisApiUrl: "/trellis-api"
     },
     head: {
         title: "Image to 3D | Synode",
