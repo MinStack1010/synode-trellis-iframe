@@ -480,17 +480,31 @@ export default {
 			this.selectedFile = file;
 			this.hasImage = Boolean(file);
 			if (file) {
-				const reader = new FileReader();
-				reader.onload = (e) => {
+				// Resize + compress to JPEG before saving to localStorage to stay within the 5 MB quota.
+				// We never modify this.selectedFile — the original full-res file is always sent to the API.
+				const img = new Image();
+				const objectUrl = URL.createObjectURL(file);
+				img.onload = () => {
+					URL.revokeObjectURL(objectUrl);
+					const MAX_PX = 512;
+					const scale = Math.min(1, MAX_PX / Math.max(img.width, img.height));
+					const canvas = document.createElement("canvas");
+					canvas.width  = Math.round(img.width  * scale);
+					canvas.height = Math.round(img.height * scale);
+					canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+					const thumbnail = canvas.toDataURL("image/jpeg", 0.7);
 					try {
-						localStorage.setItem("trellis_preview_image", e.target.result);
+						localStorage.setItem("trellis_preview_image", thumbnail);
 					} catch (err) {
-						console.warn("localStorage full:", err);
-						localStorage.removeItem("trellis_active_job_id");
+						// Still full — clear everything non-critical and try again
+						console.warn("localStorage quota hit, clearing stale data:", err);
 						localStorage.removeItem("trellis_preview_image");
+						localStorage.removeItem("trellis_last_glb_url");
+						try { localStorage.setItem("trellis_preview_image", thumbnail); } catch (_) {}
 					}
 				};
-				reader.readAsDataURL(file);
+				img.onerror = () => URL.revokeObjectURL(objectUrl);
+				img.src = objectUrl;
 			} else {
 				localStorage.removeItem("trellis_preview_image");
 				localStorage.removeItem("trellis_last_glb_url");
@@ -504,12 +518,20 @@ export default {
 			if (!apiUrl) return;
 			try {
 				const res = await fetch(`${apiUrl}/queue/status`);
-				if (!res.ok) return;
+				if (!res.ok) {
+					// Backend lỗi (504, 503...) — reset busy về false để không block nút Generate
+					this.serverBusy = false;
+					this.serverEstimatedWait = null;
+					return;
+				}
 				const data = await res.json();
 				this.serverBusy = data.busy;
 				this.serverQueuedCount = data.queued_count || 0;
 				this.serverEstimatedWait = data.estimated_wait_seconds ?? null;
 			} catch (_) {
+				// Network error (backend down) — reset busy để không block UI
+				this.serverBusy = false;
+				this.serverEstimatedWait = null;
 			}
 		},
 		_stopQueuePoll() {
