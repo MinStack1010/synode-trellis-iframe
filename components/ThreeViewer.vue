@@ -157,6 +157,22 @@ export default {
 			const box = new this.THREE.Box3().setFromObject(model);
 			if (!box.isEmpty()) model.position.y -= box.min.y;
 		},
+		/**
+		 * Returns the currently loaded model (THREE.Object3D) or null.
+		 * Used by parent components to drive USDZ / FBX export.
+		 */
+		getModel() {
+			return this.model || null;
+		},
+
+		/**
+		 * Returns the loaded THREE namespace.
+		 * Allows exporters to call THREE.Vector3 etc. without re-importing.
+		 */
+		getThree() {
+			return this.THREE || null;
+		},
+
 		frameModel(model) {
 			const box = new this.THREE.Box3().setFromObject(model);
 			if (box.isEmpty()) return;

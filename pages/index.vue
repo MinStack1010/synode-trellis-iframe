@@ -40,12 +40,15 @@
 
 		<v-col cols="12" lg="9" xl="9" class="preview-column d-flex">
 		  <preview-panel
+			ref="previewPanel"
 			:model-url="modelUrl"
 			:generated="generated"
 			:generating="generating"
 			:job-progress="jobProgress"
 			:job-queue-position="jobQueuePosition"
 			@download-glb="downloadGlb"
+			@download-fbx="downloadFbx"
+			@download-usdz="downloadUsdz"
 		  />
 		</v-col>
 
@@ -446,10 +449,58 @@ export default {
 		document.body.appendChild(link);
 		link.click();
 		link.remove();
-		URL.revokeObjectURL(blobUrl);
-	  } catch (_) {
-		window.open(this.modelUrl, "_blank", "noopener");
-		this.showToast(this.$t("image3d.downloadFallback"), "success");
+		setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+	  } catch (err) {
+		console.error("[GLB download]", err);
+		this.showToast(this.$t("image3d.generationFailed"), "error");
+	  }
+	},
+
+	async downloadUsdz() {
+	  if (!this.modelUrl) {
+		this.showToast(this.$t("image3d.generateBeforeExport"), "error");
+		return;
+	  }
+	  const viewer = this.$refs.previewPanel?.getViewer?.();
+	  const model  = viewer?.getModel?.();
+	  const THREE  = viewer?.getThree?.();
+	  if (!model || !THREE) {
+		this.showToast(this.$t("image3d.generateBeforeExport"), "error");
+		return;
+	  }
+	  try {
+		const { parseGlbTextures } = await import("~/plugins/glb-parser.js");
+		const { exportUSDZ, downloadBlob } = await import("~/plugins/usdz-exporter.js");
+		const glbTextures = await parseGlbTextures(this.modelUrl).catch(() => new Map());
+		const blob = await exportUSDZ(model, THREE, glbTextures);
+		downloadBlob(blob, "trellis2-model.usdz");
+	  } catch (err) {
+		console.error("[USDZ Export]", err);
+		this.showToast(this.$t("image3d.generationFailed"), "error");
+	  }
+	},
+
+	async downloadFbx() {
+	  if (!this.modelUrl) {
+		this.showToast(this.$t("image3d.generateBeforeExport"), "error");
+		return;
+	  }
+	  const viewer = this.$refs.previewPanel?.getViewer?.();
+	  const model  = viewer?.getModel?.();
+	  const THREE  = viewer?.getThree?.();
+	  if (!model || !THREE) {
+		this.showToast(this.$t("image3d.generateBeforeExport"), "error");
+		return;
+	  }
+	  try {
+		const { parseGlbTextures } = await import("~/plugins/glb-parser.js");
+		const { exportFBX, downloadBlob } = await import("~/plugins/fbx-exporter.js");
+		const glbTextures = await parseGlbTextures(this.modelUrl).catch(() => new Map());
+		const { blob, filename } = await exportFBX(model, THREE, glbTextures);
+		downloadBlob(blob, filename);
+	  } catch (err) {
+		console.error("[FBX Export]", err);
+		this.showToast(this.$t("image3d.generationFailed"), "error");
 	  }
 	},
 

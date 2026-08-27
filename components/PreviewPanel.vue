@@ -37,19 +37,23 @@
 									{{ $t("image3d.exportGlb") }}
 								</v-btn>
 
-								<div class="menu-item-wrap">
-									<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
-										{{ $t("image3d.exportFbx") }}
-										<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
-									</v-btn>
-								</div>
+								<v-btn
+									type="button"
+									:disabled="!generated"
+									role="menuitem"
+									@click="$emit('download-fbx')"
+								>
+									{{ $t("image3d.exportFbx") }}
+								</v-btn>
 
-								<div class="menu-item-wrap">
-									<v-btn type="button" disabled role="menuitem" class="menu-item-disabled">
-										{{ $t("image3d.exportUsdz") }}
-										<span class="coming-soon">{{ $t("image3d.comingSoon") }}</span>
-									</v-btn>
-								</div>
+								<v-btn
+									type="button"
+									:disabled="!generated"
+									role="menuitem"
+									@click="$emit('download-usdz')"
+								>
+									{{ $t("image3d.exportUsdz") }}
+								</v-btn>
 							</div>
 						</transition>
 					</div>
@@ -102,6 +106,7 @@
 		</v-row>
 
 		<three-viewer
+			ref="viewer"
 			:model-url="modelUrl"
 			:generating="generating"
 			:progress="jobProgress"
@@ -125,7 +130,7 @@ export default {
 		jobQueuePosition: { type: Number, default: null },
 	},
 
-	emits: ["download-glb"],
+	emits: ["download-glb", "download-fbx", "download-usdz"],
 
 	data() {
 		return {
@@ -139,6 +144,11 @@ export default {
 			const isOpen = menu === "export" ? this.exportOpen : this.publishOpen;
 			this.exportOpen  = menu === "export"   && !isOpen;
 			this.publishOpen = menu === "publish"  && !isOpen;
+		},
+
+		/** Expose the inner ThreeViewer ref to parent components */
+		getViewer() {
+			return this.$refs.viewer || null;
 		},
 
 		_onDocClick(e) {
