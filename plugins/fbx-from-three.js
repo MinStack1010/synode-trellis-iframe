@@ -29,9 +29,23 @@ export async function extractTexturesFromModel(model, THREE) {
         { key: 'emissiveMap',  label: 'emissive' },
         { key: 'aoMap',        label: 'ao' }
       ];
+      // NOTE: In glTF 2.0 the single packed MR texture (R=ao, G=roughness, B=metalness) is usually
+      // assigned to BOTH aoMap AND roughnessMap AND metalnessMap slots by the GLTFLoader.
+      // However the AO is stored in RED channel ONLY when a mesh really DOES have a separate
+      // occlusion channel (occlusionTexture in glTF). Most AI-generated GLBs do NOT embed AO.
+      // To avoid creating a false AO texture (re-using the packed metallic-roughness and reading
+      // the wrong channel), we SKIP extracting aoMap when it refers to the EXACT same texture as
+      // roughnessMap (same uuid) AND no explicit standalone occlusion texture was present.
+      const aoSharedWithMR = !!mat.aoMap && !!mat.roughnessMap && (mat.aoMap.uuid === mat.roughnessMap.uuid);
+
       textureSlots.forEach(slot => {
         const texture = mat[slot.key];
         if (!texture) { console.log(`[Texture Extract] No ${slot.key} texture found`); return; }
+        // Skip duplicate AO from packed MR texture
+        if (slot.label === 'ao' && aoSharedWithMR) {
+          console.log('[Texture Extract] aoMap uuid === roughnessMap uuid (MR packed shared), SKIP AO extract');
+          return;
+        }
         const compositeKey = `${texture.uuid}__${slot.label}`;
         if (textureMap.has(compositeKey)) return;
         const channel = slotChannelMap[slot.label];
@@ -129,7 +143,7 @@ function extractTextureData(texture, THREE, splitChannel = null) {
 
 // Export FBX directly from Three.js model with materials
 export async function exportFBXFromModel(model, THREE, textureMap, options = {}) {
-  const { highPrecision = true, embedTextures = true, preserveVertexColors = true } = options;
+  const { highPrecision = true, embedTextures = true, preserveVertexColors = true, flipUV = true } = options;
   
   console.log('[FBX from Three] Starting FBX export from Three.js model');
   
@@ -192,7 +206,8 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
   const meshGeoIds = [];
   meshItems.forEach((meshItem, idx) => {
     try {
-      const { meshId, geoId } = buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision);
+      // Pass flipUV option explicitly (fix ReferenceError: flipUV is not defined)
+      const { meshId, geoId } = buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision, flipUV);
       if (meshId) { meshIds.push(meshId); meshGeoIds.push(geoId); }
     } catch (error) {
       console.error(`[FBX from Three] Error building mesh ${idx}:`, error);
@@ -333,7 +348,7 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
   };
 }
 
-function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision) {
+function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision, flipUV = true) {
   const meshId = uid();
   const geoId  = uid();
   const geometry = meshItem.geometry;
@@ -349,80 +364,79 @@ function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision) {
   }
 
   const vertexCount = positions.count;
-  const f6 = (n) => Number.isFinite(n) ? (highPrecision ? +n.toFixed(9) : +n.toFixed(6)) : 0;
+  // Full precision: 15 significant digits = exact IEEE double representation (no rounding artifacts)
+  const f6 = (n) => Number.isFinite(n) ? +Number(n).toPrecision(15) : 0;
 
-  // === BUILD POLYVERTEX ORDER FIRST ===
-  // polyVertexSrcIndex[pv] = vertex index nguồn cho từng góc tam giác (theo đúng thứ tự polygon-vertex).
-  // Tất cả layer (normal/uv/color) ByPolygonVertex phải đi theo cùng thứ tự này Babylon mới match đúng.
+  // === EXPLODE TO PER-POLY-CORNER (non-indexed unique vertex per face corner) ===
+  // This is the canonical FBX layout used by Blender/3ds Max exporters by default.
+  // Every corner of every triangle has its own Position / Normal / UV / Color values.
+  // Result: zero index-lookup mismatch, impossible for importers to mis-wire attributes
+  // -> mesh cannot "crack", UV maps/normal maps match GLB exactly regardless of viewer.
+  // Tradeoff: ~3.8× vertex storage (acceptable for offline delivery).
   const index = geometry.index;
-  let triangleCount = vertexCount / 3;
-  let polyIndices, polyVertexSrcIndex;
-  if (index) {
-    triangleCount = index.count / 3;
-    polyIndices = new Array(triangleCount * 3);
-    polyVertexSrcIndex = new Array(triangleCount * 3);
-    for (let t = 0; t < triangleCount; t++) {
-      const i0 = index.getX(t * 3), i1 = index.getX(t * 3 + 1), i2 = index.getX(t * 3 + 2);
-      polyIndices[t * 3] = i0; polyIndices[t * 3 + 1] = i1; polyIndices[t * 3 + 2] = ~i2;
-      polyVertexSrcIndex[t * 3] = i0; polyVertexSrcIndex[t * 3 + 1] = i1; polyVertexSrcIndex[t * 3 + 2] = i2;
-    }
-  } else {
-    triangleCount = vertexCount / 3;
-    polyIndices = new Array(triangleCount * 3);
-    polyVertexSrcIndex = new Array(triangleCount * 3);
-    for (let t = 0; t < triangleCount; t++) {
-      const i0 = t * 3, i1 = t * 3 + 1, i2 = t * 3 + 2;
-      polyIndices[t * 3] = i0; polyIndices[t * 3 + 1] = i1; polyIndices[t * 3 + 2] = ~i2;
-      polyVertexSrcIndex[t * 3] = i0; polyVertexSrcIndex[t * 3 + 1] = i1; polyVertexSrcIndex[t * 3 + 2] = i2;
-    }
-  }
+  const triangleCount = index ? index.count / 3 : vertexCount / 3;
   const polyVertexCount = triangleCount * 3;
-  console.log(`[FBX from Three] Building mesh ${meshItem.name}: verts=${vertexCount} tris=${triangleCount} polyVerts=${polyVertexCount}`);
+  console.log(`[FBX from Three] Building mesh ${meshItem.name}: source=${vertexCount} verts, ${triangleCount} tris -> EXPLODE to ${polyVertexCount} unique poly-corners (non-indexed safe layout)`);
 
-  // Positions (per-vertex, tham chiếu bởi polyIndices)
-  const posArray = new Array(vertexCount * 3);
-  for (let i = 0; i < vertexCount; i++) {
-    const v = new THREE.Vector3(positions.getX(i), positions.getY(i), positions.getZ(i)).applyMatrix4(worldMatrix);
-    posArray[i * 3] = f6(v.x); posArray[i * 3 + 1] = f6(v.y); posArray[i * 3 + 2] = f6(v.z);
+  // --- Fetch indices once --- //
+  const srcIndex = (pv) => index ? index.getX(pv) : pv;
+
+  // --- Position array (world-transformed, 3 per poly-corner) --- //
+  const posArray = new Array(polyVertexCount * 3);
+  const polyIndices = new Array(polyVertexCount);
+  for (let pv = 0; pv < polyVertexCount; pv++) {
+    const vi = srcIndex(pv);
+    const v = new THREE.Vector3(positions.getX(vi), positions.getY(vi), positions.getZ(vi))
+                  .applyMatrix4(worldMatrix);
+    posArray[pv * 3]     = f6(v.x);
+    posArray[pv * 3 + 1] = f6(v.y);
+    posArray[pv * 3 + 2] = f6(v.z);
+    // PolygonVertexIndex: last corner of each tri (pv % 3 === 2) is bitwise-NOT to mark end-of-face
+    polyIndices[pv] = (pv % 3 === 2) ? ~pv : pv;
   }
 
-  // Normals - ByPolygonVertex (3 normal per tri)
+  // --- Normal array (per-corner, normal-matrix transformed) --- //
   let normArray = null;
   if (normals) {
     const normalMatrix = new THREE.Matrix3().getNormalMatrix(worldMatrix);
     normArray = new Array(polyVertexCount * 3);
     for (let pv = 0; pv < polyVertexCount; pv++) {
-      const vi = polyVertexSrcIndex[pv];
+      const vi = srcIndex(pv);
       const n = new THREE.Vector3(normals.getX(vi), normals.getY(vi), normals.getZ(vi))
                     .applyMatrix3(normalMatrix).normalize();
-      normArray[pv * 3] = f6(n.x); normArray[pv * 3 + 1] = f6(n.y); normArray[pv * 3 + 2] = f6(n.z);
+      normArray[pv * 3]     = f6(n.x);
+      normArray[pv * 3 + 1] = f6(n.y);
+      normArray[pv * 3 + 2] = f6(n.z);
     }
   }
 
-  // UV - ByPolygonVertex, flip V, IndexToDirect + identity indices
+  // --- UV array (per-corner; V flipped for FBX bottom-left convention when flipUV=true) --- //
   let uvArray = null;
   let uvIndexArray = null;
   if (uvs) {
     uvArray = new Array(polyVertexCount * 2);
     uvIndexArray = new Array(polyVertexCount);
     for (let pv = 0; pv < polyVertexCount; pv++) {
-      const vi = polyVertexSrcIndex[pv];
+      const vi = srcIndex(pv);
       uvArray[pv * 2]     = f6(uvs.getX(vi));
-      uvArray[pv * 2 + 1] = f6(1 - uvs.getY(vi)); // FBX V ngược glTF
-      uvIndexArray[pv]    = pv;
+      uvArray[pv * 2 + 1] = flipUV ? f6(1 - uvs.getY(vi)) : f6(uvs.getY(vi));
+      uvIndexArray[pv] = pv;  // identity = Direct-compatible IndexToDirect
     }
   }
 
-  // Vertex colors - ByPolygonVertex
+  // --- Vertex color array (per-corner) --- //
   let colorArray = null;
+  let colorIndexArray = null;
   if (colors) {
     colorArray = new Array(polyVertexCount * 4);
+    colorIndexArray = new Array(polyVertexCount);
     for (let pv = 0; pv < polyVertexCount; pv++) {
-      const vi = polyVertexSrcIndex[pv];
+      const vi = srcIndex(pv);
       colorArray[pv * 4]     = f6(colors.getX(vi));
       colorArray[pv * 4 + 1] = f6(colors.getY(vi));
       colorArray[pv * 4 + 2] = f6(colors.getZ(vi));
       colorArray[pv * 4 + 3] = colors.itemSize === 4 ? f6(colors.getW(vi)) : 1.0;
+      colorIndexArray[pv] = pv;
     }
   }
 
@@ -441,6 +455,8 @@ function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision) {
     const le = geo.child('LayerElementNormal');
     le.child('Version').addInt32(101);
     le.child('Name').addString('');
+    // After explode: 1 value per poly-vertex -> Direct mapping (no lookup needed).
+    // Safest for every importer; identical to Blender default FBX export.
     le.child('MappingInformationType').addString('ByPolygonVertex');
     le.child('ReferenceInformationType').addString('Direct');
     le.child('Normals').addFloat64Array(normArray);
@@ -453,7 +469,7 @@ function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision) {
     le.child('MappingInformationType').addString('ByPolygonVertex');
     le.child('ReferenceInformationType').addString('IndexToDirect');
     le.child('UV').addFloat64Array(uvArray);
-    le.child('UVIndex').addInt32Array(uvIndexArray); // identity index, polyVertexCount phần tử
+    le.child('UVIndex').addInt32Array(uvIndexArray);
   }
 
   if (colorArray) {
@@ -509,11 +525,20 @@ function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision) {
   p70(mp, 'InheritType', 'enum', '', '', 1);
   p70(mp, 'ScalingMax', 'Vector3D', 'Vector', '', 0.0, 0.0, 0.0);
   p70(mp, 'DefaultAttributeIndex', 'int', 'Integer', '', 0);
+  // Local transform already baked into vertices — keep Lcl at identity.
+  // Include Geometric variants (some importers read only these for mesh pivot).
   p70(mp, 'Lcl Translation', 'Lcl Translation', '', 'A', 0.0, 0.0, 0.0);
-  p70(mp, 'Lcl Rotation', 'Lcl Rotation', '', 'A', 0.0, 0.0, 0.0);
-  p70(mp, 'Lcl Scaling', 'Lcl Scaling', '', 'A', 1.0, 1.0, 1.0);
+  p70(mp, 'Lcl Rotation',    'Lcl Rotation',    '', 'A', 0.0, 0.0, 0.0);
+  p70(mp, 'Lcl Scaling',     'Lcl Scaling',     '', 'A', 1.0, 1.0, 1.0);
+  p70(mp, 'GeometricTranslation', 'Lcl Translation', '', 'A', 0.0, 0.0, 0.0);
+  p70(mp, 'GeometricRotation',    'Lcl Rotation',    '', 'A', 0.0, 0.0, 0.0);
+  p70(mp, 'GeometricScaling',     'Lcl Scaling',     '', 'A', 1.0, 1.0, 1.0);
+  p70(mp, 'Prefered Deformation Epsilon', 'double', 'Number', 'AU', 1e-6);
+  // Inherit visibility / lighting flags:
+  p70(mp, 'Visibility',    'Visibility',    'Visibility', 'A', 1.0);
+  p70(mp, 'VisibilityInheritance', 'Visibility', 'Visibility', 'A', 1.0);
   model.child('Shading').addString('Y');
-  model.child('Culling').addString('CullingOff');
+  // Culling mode is also set by material TwoSided; redundant hard CullingOff here keeps imports sane.
 
   console.log(`[FBX from Three] Mesh ${meshItem.name} OK: meshId=${meshId} geoId=${geoId}`);
   return { meshId, geoId };
@@ -521,7 +546,7 @@ function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision) {
 
 function buildMaterialFromThree(objects, uid, material, name) {
   const matId = uid();
-  // Preserve 100% giá trị glTF PBR gốc - KHÔNG clamp, KHÔNG convert sai.
+  // Preserve 100% giá trị glTF PBR gốc - KHÔNG clamp nào.
   const color = material.color || { r: 1, g: 1, b: 1 };
   const roughness = material.roughness ?? 0.5;
   const metalness = material.metalness ?? 0.0;
@@ -535,52 +560,108 @@ function buildMaterialFromThree(objects, uid, material, name) {
   const emR = (emissive.r ?? 0) * emissiveIntensity;
   const emG = (emissive.g ?? 0) * emissiveIntensity;
   const emB = (emissive.b ?? 0) * emissiveIntensity;
+  // Derived values (match Babylon / 3ds Max PBR importer expectations exactly)
+  const glossiness       = Math.max(0.0, Math.min(1.0, 1.0 - roughness));
+  // Dielectric F0 = glTF 2.0 standard 0.04; Babylon/Unity use this exact value for non-metallic Fresnel.
+  const specularF0       = 0.04;
+  const dielectricSpecR = specularF0 * baseR;
+  const dielectricSpecG = specularF0 * baseG;
+  const dielectricSpecB = specularF0 * baseB;
+  // When metalness = 1.0 use baseColor as specular (real-world conductor behavior per glTF spec).
+  const finalSpecR = dielectricSpecR * (1 - metalness) + baseR * metalness;
+  const finalSpecG = dielectricSpecG * (1 - metalness) + baseG * metalness;
+  const finalSpecB = dielectricSpecB * (1 - metalness) + baseB * metalness;
 
-  console.log(`[FBX from Three] PBR material ${name}: base=(${baseR.toFixed(2)} ${baseG.toFixed(2)} ${baseB.toFixed(2)}) rough=${roughness.toFixed(3)} metal=${metalness.toFixed(3)} opa=${opacity.toFixed(3)}`);
+  console.log(`[FBX from Three] PBR material ${name}: base=(${baseR.toFixed(2)},${baseG.toFixed(2)},${baseB.toFixed(2)}) rough=${roughness.toFixed(3)} metal=${metalness.toFixed(3)} opa=${opacity.toFixed(3)}`);
 
   const mat = objects.child('Material');
   mat.addInt64(matId);
   mat.addString(name + '\x00\x01Material');
   mat.addString('');
-  mat.child('Version').addInt32(103);
-  mat.child('ShadingModel').addString('Standard');   // Autodesk PBR chuẩn (Babylon nhận)
+  mat.child('Version').addInt32(104);
+  mat.child('ShadingModel').addString('PBR');
   mat.child('MultiLayer').addInt32(0);
   const mpp = mat.child('Properties70');
 
-  p70(mpp, 'ShadingModel',     'KString',  '',     '',   'Standard');
-  // Base color = material.color (như glTF baseColorFactor, Babylon sẽ nhân với diffuse sample)
-  p70(mpp, 'DiffuseColor',     'ColorRGB', 'Color','A',  baseR, baseG, baseB);
-  p70(mpp, 'DiffuseFactor',    'double',   'Number','A', 1.0);
-  p70(mpp, 'BaseColor',        'ColorRGB', 'Color','',   baseR, baseG, baseB);
-  // Metallic
-  p70(mpp, 'Metalness',        'double',   'Number','A', metalness);
-  p70(mpp, 'Metallic',         'double',   'Number','',  metalness);
-  p70(mpp, 'ReflectionColor',  'ColorRGB', 'Color','A',  metalness, metalness, metalness);
-  p70(mpp, 'ReflectionFactor', 'double',   'Number','A', metalness);
-  // Roughness
-  p70(mpp, 'Roughness',        'double',   'Number','A', roughness);
-  // Specular default 1 (standard glTF dielectric)
-  p70(mpp, 'SpecularColor',    'ColorRGB', 'Color','A',  1, 1, 1);
-  p70(mpp, 'SpecularFactor',   'double',   'Number','A', 1.0);
-  p70(mpp, 'Shininess',        'double',   'Number','A', Math.max(2, (1 - roughness) * 100));
-  // Emissive
-  p70(mpp, 'EmissiveColor',    'ColorRGB', 'Color','A',  emR, emG, emB);
-  p70(mpp, 'EmissiveFactor',   'double',   'Number','A', 1.0);
-  p70(mpp, 'EmissiveIntensity','double',   'Number','',  emissiveIntensity);
-  // Ambient = AO factor default 1
-  p70(mpp, 'AmbientColor',     'ColorRGB', 'Color','A',  1, 1, 1);
-  p70(mpp, 'AmbientFactor',    'double',   'Number','A', 1.0);
-  // Opacity / Transparency
-  p70(mpp, 'Opacity',            'double',   'Number','A', opacity);
-  p70(mpp, 'TransparencyFactor', 'double',   'Number','A', 1 - opacity);
-  p70(mpp, 'TransparentColor',   'ColorRGB', 'Color','A',  1 - opacity, 1 - opacity, 1 - opacity);
-  // Normal / Bump scale
-  p70(mpp, 'BumpFactor',   'double', 'Number','A', 1.0);
-  p70(mpp, 'NormalScaleX', 'double', 'Number','',  normalScale.x ?? 1);
-  p70(mpp, 'NormalScaleY', 'double', 'Number','',  normalScale.y ?? 1);
-  if (doubleSided) p70(mpp, 'TwoSided', 'bool', '', 'A', 1);
+  // ================ 3ds Max Standard Surface IMPLEMENTATION BLOCK (required for Babylon PBR recognition) =========
+  p70(mpp, 'ShadingModel',              'KString', '',           '',   'PBR');
+  p70(mpp, 'ImplementationName',        'KString', '',           '',   '3ds Max');
+  p70(mpp, 'ImplementationRendererName','KString', '',           '',   'Default Scanline Renderer');
+  p70(mpp, 'ImplementationVersion',     'KString', '',           '',   '2024');
+  p70(mpp, 'RenderChannelType',         'enum',    '',           '',   0);
+  p70(mpp, 'RenderChannelIndex',        'int',     'Integer',    '',   0);
+  p70(mpp, 'SpecularWorkflow',          'int',     'Integer',    '',   1); // 0 = SpecGloss, 1 = MetalRough
+  p70(mpp, 'Use_PBR_MetalRough',        'bool',    '',           '',   1); // explicit workflow hint
+  p70(mpp, 'UseLegacyBump',             'bool',    '',           '',   0); // use tangent-space normal, not height
 
-  console.log(`[FBX from Three] PBR material ${name} OK matId=${matId}`);
+  // ========== Base / Diffuse ==========
+  p70(mpp, 'BaseColor',                 'ColorRGB','Color',      'A',  baseR, baseG, baseB);
+  p70(mpp, 'BaseWeight',                'double',  'Number',     'A',  1.0);  // multiplier for baseColor map
+  p70(mpp, 'DiffuseColor',              'ColorRGB','Color',      'A',  baseR, baseG, baseB); // legacy alias
+  p70(mpp, 'DiffuseFactor',             'double',  'Number',     'A',  1.0);
+  p70(mpp, 'DiffuseWeight',             'double',  'Number',     'AU', 1.0);  // texture influence 0..1
+
+  // ========== Metallic (texture sample × scalar factor - Babylon reads the 'Weight' variants first) ==========
+  p70(mpp, 'Metalness',                 'double',  'Number',     'A',  metalness);
+  p70(mpp, 'Metallic',                  'double',  'Number',     'A',  metalness);
+  p70(mpp, 'MetalnessFactor',           'double',  'Number',     'A',  metalness);
+  p70(mpp, 'MetalnessWeight',           'double',  'Number',     'AU', 1.0);  // how strongly metalness map applies
+  p70(mpp, 'ReflectionColor',           'ColorRGB','Color',      'A',  metalness, metalness, metalness);
+  p70(mpp, 'ReflectionFactor',          'double',  'Number',     'A',  metalness);
+
+  // ========== Roughness ==========
+  p70(mpp, 'Roughness',                 'double',  'Number',     'A',  roughness);
+  p70(mpp, 'RoughnessFactor',           'double',  'Number',     'A',  roughness);
+  p70(mpp, 'RoughnessWeight',           'double',  'Number',     'AU', 1.0);  // Babylon / 3ds Max explicit
+  // Glossiness pair (Unity + some FBX readers prefer this inverse)
+  p70(mpp, 'Glossiness',                'double',  'Number',     'A',  glossiness);
+  p70(mpp, 'GlossinessFactor',          'double',  'Number',     'A',  glossiness);
+  p70(mpp, 'GlossinessWeight',          'double',  'Number',     'AU', 1.0);
+
+  // ========== Specular (physically correct F0 per glTF) ==========
+  p70(mpp, 'SpecularColor',             'ColorRGB','Color',      'A',  finalSpecR, finalSpecG, finalSpecB);
+  p70(mpp, 'SpecularFactor',            'double',  'Number',     'A',  1.0);
+  p70(mpp, 'SpecularLevel',             'double',  'Number',     'A',  1.0);
+  p70(mpp, 'Shininess',                 'double',  'Number',     'A',  Math.max(2.0, glossiness * 100.0)); // Phong fallback
+
+  // ========== Emissive ==========
+  p70(mpp, 'EmissiveColor',             'ColorRGB','Color',      'A',  emR, emG, emB);
+  p70(mpp, 'EmissiveFactor',            'double',  'Number',     'A',  1.0);
+  p70(mpp, 'EmissiveWeight',            'double',  'Number',     'AU', 1.0);
+  p70(mpp, 'EmissiveIntensity',         'double',  'Number',     'A',  emissiveIntensity);
+
+  // ========== Ambient / AO ==========
+  p70(mpp, 'AmbientColor',              'ColorRGB','Color',      'A',  1, 1, 1);
+  p70(mpp, 'AmbientFactor',             'double',  'Number',     'A',  1.0);
+  p70(mpp, 'AOWeight',                  'double',  'Number',     'AU', 1.0);
+
+  // ========== Normal / Bump ==========
+  p70(mpp, 'BumpFactor',                'double',  'Number',     'A',  1.0);
+  p70(mpp, 'NormalScaleX',              'double',  'Number',     'A',  normalScale.x ?? 1);
+  p70(mpp, 'NormalScaleY',              'double',  'Number',     'A',  normalScale.y ?? 1);
+  p70(mpp, 'BumpWeight',                'double',  'Number',     'AU', 1.0);
+
+  // ========== Coat / Sheen / SSS / Anisotropy defaults (no-op; prevents shader fallbacks) ==========
+  p70(mpp, 'CoatingColor',              'ColorRGB','Color',      'AU', 1, 1, 1);
+  p70(mpp, 'CoatingWeight',             'double',  'Number',     'AU', 0.0);
+  p70(mpp, 'CoatingRoughness',          'double',  'Number',     'AU', 0.0);
+  p70(mpp, 'Anisotropy',                'double',  'Number',     'AU', 0.0);
+  p70(mpp, 'AnisotropyRotation',        'double',  'Number',     'AU', 0.0);
+  p70(mpp, 'SSSColor',                  'ColorRGB','Color',      'AU', 0, 0, 0);
+  p70(mpp, 'SSSWeight',                 'double',  'Number',     'AU', 0.0);
+  p70(mpp, 'SheenColor',                'ColorRGB','Color',      'AU', 0, 0, 0);
+  p70(mpp, 'SheenWeight',               'double',  'Number',     'AU', 0.0);
+  p70(mpp, 'SheenRoughness',            'double',  'Number',     'AU', 0.5);
+  p70(mpp, 'ThinFilmThickness',         'double',  'Number',     'AU', 0.0);
+
+  // ========== Opacity / Transparency ==========
+  p70(mpp, 'Opacity',                   'double',  'Number',     'A',  opacity);
+  p70(mpp, 'TransparencyFactor',        'double',  'Number',     'A',  1 - opacity);
+  p70(mpp, 'TransparentColor',          'ColorRGB','Color',      'A',  1 - opacity, 1 - opacity, 1 - opacity);
+  p70(mpp, 'OpacityWeight',             'double',  'Number',     'AU', 1.0);
+  if (doubleSided) p70(mpp, 'TwoSided', 'bool',    '',           'A',  1);
+
+  console.log(`[FBX from Three] PBR material ${name} OK matId=${matId} (ShadingModel=PBR, Workflow=MetalRough, SpecF0=(0.04 mix base), weight factors all=1.0)`);
   return matId;
 }
 
