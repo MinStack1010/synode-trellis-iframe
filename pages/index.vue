@@ -195,8 +195,20 @@ export default {
 
 	const savedGlbUrl = localStorage.getItem("trellis_last_glb_url");
 	if (savedGlbUrl) {
-	  this.modelUrl  = savedGlbUrl;
-	  this.generated = true;
+	  // Try to validate the URL before using it
+	  try {
+		const check = await fetch(savedGlbUrl, { method: 'HEAD' });
+		if (check.ok) {
+		  this.modelUrl  = savedGlbUrl;
+		  this.generated = true;
+		} else {
+		  console.warn('[GLB URL] Saved URL is no longer valid, will regenerate');
+		  localStorage.removeItem("trellis_last_glb_url");
+		}
+	  } catch (e) {
+		console.warn('[GLB URL] Could not validate saved URL:', e);
+		localStorage.removeItem("trellis_last_glb_url");
+	  }
 	}
 
 	const savedJobId = localStorage.getItem("trellis_active_job_id");
@@ -438,9 +450,11 @@ export default {
 		return;
 	  }
 	  try {
+		this.showToast("Exporting...", "success");
 		const res = await fetch(this.modelUrl);
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const blob = await res.blob();
+		console.log('[GLB Download] Blob size:', blob.size, 'bytes, type:', blob.type);
 		const blobUrl = URL.createObjectURL(blob);
 		const link = document.createElement("a");
 		link.href = blobUrl;
@@ -450,6 +464,7 @@ export default {
 		link.click();
 		link.remove();
 		setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+		this.showToast("Export successful", "success");
 	  } catch (err) {
 		console.error("[GLB download]", err);
 		this.showToast(this.$t("image3d.generationFailed"), "error");
@@ -461,22 +476,24 @@ export default {
 		this.showToast(this.$t("image3d.generateBeforeExport"), "error");
 		return;
 	  }
-	  const viewer = this.$refs.previewPanel?.getViewer?.();
-	  const model  = viewer?.getModel?.();
-	  const THREE  = viewer?.getThree?.();
+	  const model  = this.$refs.previewPanel?.getModel?.();
+	  const THREE  = this.$refs.previewPanel?.getThree?.();
 	  if (!model || !THREE) {
 		this.showToast(this.$t("image3d.generateBeforeExport"), "error");
 		return;
 	  }
 	  try {
+		this.showToast("Exporting...", "success");
 		const { parseGlbTextures } = await import("~/plugins/glb-parser.js");
 		const { exportUSDZ, downloadBlob } = await import("~/plugins/usdz-exporter.js");
 		const glbTextures = await parseGlbTextures(this.modelUrl).catch(() => new Map());
 		const blob = await exportUSDZ(model, THREE, glbTextures);
 		downloadBlob(blob, "trellis2-model.usdz");
+		
+		this.showToast("Export successful", "success");
 	  } catch (err) {
 		console.error("[USDZ Export]", err);
-		this.showToast(this.$t("image3d.generationFailed"), "error");
+		this.showToast(this.$t("image3d.exportFailed"), "error");
 	  }
 	},
 
@@ -485,22 +502,44 @@ export default {
 		this.showToast(this.$t("image3d.generateBeforeExport"), "error");
 		return;
 	  }
-	  const viewer = this.$refs.previewPanel?.getViewer?.();
-	  const model  = viewer?.getModel?.();
-	  const THREE  = viewer?.getThree?.();
-	  if (!model || !THREE) {
-		this.showToast(this.$t("image3d.generateBeforeExport"), "error");
-		return;
-	  }
 	  try {
-		const { parseGlbTextures } = await import("~/plugins/glb-parser.js");
-		const { exportFBX, downloadBlob } = await import("~/plugins/fbx-exporter.js");
-		const glbTextures = await parseGlbTextures(this.modelUrl).catch(() => new Map());
-		const { blob, filename } = await exportFBX(model, THREE, glbTextures);
+		this.showToast("Exporting...", "success");
+		
+		console.log('[FBX Export] Starting FBX export from loaded Three.js model');
+		console.log('[FBX Export] modelUrl:', this.modelUrl);
+		
+		const model  = this.$refs.previewPanel?.getModel?.();
+		const THREE  = this.$refs.previewPanel?.getThree?.();
+		
+		console.log('[FBX Export] Model from previewPanel:', model);
+		console.log('[FBX Export] THREE from previewPanel:', THREE);
+		
+		if (!model || !THREE) {
+		  throw new Error("Model not loaded for export");
+		}
+		
+		console.log('[FBX Export] Model loaded, extracting textures from Three.js materials');
+		
+		// Extract textures directly from Three.js model
+		const { extractTexturesFromModel, exportFBXFromModel, downloadBlob } = await import("~/plugins/fbx-from-three.js");
+		
+		const modelTextures = await extractTexturesFromModel(model, THREE);
+		console.log('[FBX Export] Extracted', modelTextures.size, 'textures from Three.js model');
+		
+		const { blob, filename } = await exportFBXFromModel(model, THREE, modelTextures, {
+		  highPrecision: true,
+		  embedTextures: true,
+		  preserveVertexColors: true
+		});
+		
+		console.log('[FBX Export] FBX blob created, size:', blob.size, 'bytes, filename:', filename);
+		
 		downloadBlob(blob, filename);
+		
+		this.showToast("Export successful", "success");
 	  } catch (err) {
-		console.error("[FBX Export]", err);
-		this.showToast(this.$t("image3d.generationFailed"), "error");
+		console.error("[FBX Export Complete Failure]", err);
+		this.showToast("Export failed: " + (err.message || "Unknown error"), "error");
 	  }
 	},
 

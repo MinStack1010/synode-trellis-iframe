@@ -10,7 +10,10 @@ export function buildGeometryNode(objects, uid, p70fn, name, geo, world, THREE) 
   const rawPos  = readAttr(src.attributes.position);
   const rawNorm = readAttr(src.attributes.normal);
   const rawUV   = readAttr(src.attributes.uv);
-  const f6      = (n) => Number.isFinite(n) ? +n.toFixed(6) : 0;
+  const rawCol  = readAttr(src.attributes.color); // Vertex colors
+  const f6      = (n) => Number.isFinite(n) ? +n.toFixed(9) : 0;
+
+  console.log(`[FBX Geometry] Processing ${name}: ${vc} vertices, ${tc} triangles, hasUV: ${!!rawUV}, hasNormal: ${!!rawNorm}, hasColor: ${!!rawCol}`);
 
   // Bake world transform vào positions
   const wm  = world.elements;
@@ -45,6 +48,19 @@ export function buildGeometryNode(objects, uid, p70fn, name, geo, world, THREE) 
       uv[i*2]   = f6(rawUV[i*2]);
       uv[i*2+1] = f6(1 - rawUV[i*2+1]);
     }
+  }
+
+  // Vertex colors nếu có - preserve original vertex colors exactly
+  let col = null;
+  if (rawCol) {
+    col = new Array(vc * 4);
+    for (let i = 0; i < vc; i++) {
+      col[i*4]   = f6(rawCol[i*4]);
+      col[i*4+1] = f6(rawCol[i*4+1]);
+      col[i*4+2] = f6(rawCol[i*4+2]);
+      col[i*4+3] = f6(rawCol[i*4+3] || 1.0); // Alpha fallback
+    }
+    console.log(`[FBX Geometry] Preserved ${vc} vertex colors for ${name}`);
   }
 
   // PolygonVertexIndex — last index per triangle = ~index (FBX convention)
@@ -88,6 +104,15 @@ export function buildGeometryNode(objects, uid, p70fn, name, geo, world, THREE) 
   lm.child('ReferenceInformationType').addString('IndexToDirect');
   lm.child('Materials').addInt32Array([0]);
 
+  if (col) {
+    const lvc = gn.child('LayerElementVertexColor');
+    lvc.child('Version').addInt32(101);
+    lvc.child('Name').addString('');
+    lvc.child('MappingInformationType').addString('ByPolygonVertex');
+    lvc.child('ReferenceInformationType').addString('Direct');
+    lvc.child('Colors').addFloat64Array(col);
+  }
+
   const lay = gn.child('Layer');
   lay.child('Version').addInt32(100);
   if (nrm) {
@@ -98,6 +123,11 @@ export function buildGeometryNode(objects, uid, p70fn, name, geo, world, THREE) 
   if (uv) {
     const e = lay.child('LayerElement');
     e.child('Type').addString('LayerElementUV');
+    e.child('TypedIndex').addInt32(0);
+  }
+  if (col) {
+    const e = lay.child('LayerElement');
+    e.child('Type').addString('LayerElementVertexColor');
     e.child('TypedIndex').addInt32(0);
   }
   const em = lay.child('LayerElement');

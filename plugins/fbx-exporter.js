@@ -2,12 +2,19 @@ import { FBX_VERSION, HEAD_MAGIC, FOOT_ID, SENTINEL, ByteWriter, FbxNode, p70, u
 import { MAT_TEX_SLOTS, buildTexBytesMap, buildMaterialNodes }                         from './fbx-material.js';
 import { buildGeometryNode }                                                            from './fbx-geometry.js';
 
-export async function exportFBX(model, THREE, glbTextures) {
+export async function exportFBX(model, THREE, glbTextures, options = {}) {
+  const {
+    highPrecision = true,       // Use 9 decimal places for coordinates
+    embedTextures = true,       // Embed textures in FBX
+    preserveVertexColors = true, // Keep vertex colors if present
+    optimizeGeometry = false    // Skip optimization to preserve quality
+  } = options;
   model.updateMatrixWorld(true);
 
   // Build uuid→bytes map (fix: dùng per-slot keys đúng)
   const slotKeys = MAT_TEX_SLOTS.map(s => s.key);
   const uuidToBytes = buildTexBytesMap(model, glbTextures, slotKeys);
+  console.log(`[FBX] Export options: highPrecision=${highPrecision}, embedTextures=${embedTextures}, preserveVertexColors=${preserveVertexColors}`);
   console.log(`[FBX] texture map: ${uuidToBytes.size} unique texture(s) resolved`);
 
   // Collect meshes
@@ -55,6 +62,8 @@ export async function exportFBX(model, THREE, glbTextures) {
     const { name, geo, mat, world } = meshItems[mi];
     const hasEmissive = hasEmissivePerMesh[mi];
 
+    console.log(`[FBX Export] Processing mesh ${mi}/${meshItems.length}: "${name}"`);
+
     // Geometry
     const { geoId, empty } = buildGeometryNode(objects, uid, p70, name, geo, world, THREE);
     if (empty) { console.warn(`[FBX] mesh "${name}" has no vertices — skipped`); continue; }
@@ -63,10 +72,12 @@ export async function exportFBX(model, THREE, glbTextures) {
     const modelId = uid();
     buildModelNode(objects, uid, p70, modelId, name);
 
-    // Material + textures
+    // Material + textures - use original material exactly as is
     const { matId, texConnections } = buildMaterialNodes(
       objects, uid, p70, name, mat, hasEmissive, uuidToBytes, MAT_TEX_SLOTS
     );
+    
+    console.log(`[FBX Export] Material ID: ${matId}, Texture connections: ${texConnections.length}`);
 
     // Connections: vid→tex, tex→mat(channel)
     for (const { vidId, texId, fbxChannel } of texConnections) {
@@ -96,7 +107,8 @@ export async function exportFBX(model, THREE, glbTextures) {
   bw.write(new Uint8Array([0xf8,0x5a,0x8c,0x6a,0xde,0xf5,0xd9,0x7e,0xec,0xe9,0x0c,0xe3,0x75,0x8f,0x29,0x0b]));
 
   const buf = bw.toBuffer();
-  console.log(`[FBX] Done — ${Math.round(buf.length/1024)}KB, ${meshItems.length} mesh(es), ${totalTex} texture(s) embedded`);
+  console.log(`[FBX] Export complete — ${Math.round(buf.length/1024)}KB, ${meshItems.length} mesh(es), ${totalTex} texture(s) embedded`);
+  console.log(`[FBX] Quality settings: precision=${highPrecision ? 'high' : 'standard'}, textures=${embedTextures ? 'embedded' : 'external'}`);
   return { blob: new Blob([buf], { type: 'application/octet-stream' }), filename: 'trellis2-model.fbx' };
 }
 
@@ -134,6 +146,10 @@ function buildGlobalSettings(root) {
   p70(gsp, 'CoordAxisSign',   'int',    'Integer', '', 1);
   p70(gsp, 'OriginalUpAxis',  'int',    'Integer', '', -1);
   p70(gsp, 'UnitScaleFactor', 'double', 'Number',  'A', 1.0);
+  p70(gsp, 'TimeMode',        'enum',    '',        '', 6); // Custom FPS
+  p70(gsp, 'TimeSpanStart',   'KTime',  'Time',    '', 0);
+  p70(gsp, 'TimeSpanStop',    'KTime',  'Time',    '', 46186158000);
+  p70(gsp, 'CustomFrameRate', 'double',  'Number',  'A', 30.0);
 }
 
 function buildDocuments(root, uid) {

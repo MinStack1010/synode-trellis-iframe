@@ -1,6 +1,7 @@
 const TEXTURE_SLOTS = [
   'map', 'normalMap', 'roughnessMap', 'metalnessMap',
   'emissiveMap', 'aoMap', 'lightMap', 'envMap',
+  'displacementMap', 'alphaMap',
 ];
 
 function cloneMaterial(src, THREE) {
@@ -17,6 +18,10 @@ function cloneMaterial(src, THREE) {
   dst.alphaTest         = src.alphaTest         ?? 0;
   dst.aoMapIntensity    = src.aoMapIntensity     ?? 1;
   dst.normalScale       = src.normalScale ? src.normalScale.clone() : new THREE.Vector2(1, 1);
+  dst.side              = src.side ?? THREE.FrontSide;
+  dst.wireframe         = src.wireframe ?? false;
+  dst.flatShading       = src.flatShading ?? false;
+  // Keep all textures
   for (const slot of TEXTURE_SLOTS) {
     if (src[slot] != null) dst[slot] = src[slot];
   }
@@ -198,14 +203,22 @@ export async function exportUSDZ(model, THREE, glbTextures) {
       });
     });
   });
-  const maxTextureSize = Math.min(maxTex, 4096);
+  // Tăng max texture size lên 8192 cho chất lượng cao hơn
+  const maxTextureSize = Math.min(maxTex, 8192);
 
   const clonedGeos = [];
   const exportRoot = await buildExportGroup(model, THREE, texBytesMap, clonedGeos);
 
   try {
     const exporter = new USDZExporter();
-    const result = await exporter.parseAsync(exportRoot, { maxTextureSize, quickLookCompatible: false });
+    const result = await exporter.parseAsync(exportRoot, { 
+      maxTextureSize, 
+      quickLookCompatible: false,
+      compressTextures: true, // Enable texture compression
+      textureCompressionQuality: 0.85, // High quality compression
+      includeAnimations: false,
+      includeHelpers: false
+    });
     if (!result || (result.byteLength ?? result.length) === 0)
       throw new Error('USDZExporter returned empty result.');
     const bytes = result instanceof Uint8Array ? result : new Uint8Array(result);

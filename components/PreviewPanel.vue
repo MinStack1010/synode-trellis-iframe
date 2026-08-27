@@ -150,6 +150,16 @@ export default {
 		getViewer() {
 			return this.$refs.viewer || null;
 		},
+		
+		/** Expose model from ThreeViewer for export */
+		getModel() {
+			return this.$refs.viewer?.getModel?.() || null;
+		},
+		
+		/** Expose THREE library from ThreeViewer for export */
+		getThree() {
+			return this.$refs.viewer?.getThree?.() || null;
+		},
 
 		_onDocClick(e) {
 			if (!this.$el.contains(e.target)) {
