@@ -20,7 +20,6 @@ export async function extractTexturesFromModel(model, THREE) {
     const materials = Array.isArray(node.material) ? node.material : [node.material];
     materials.forEach(mat => {
       if (!mat) return;
-      console.log(`[Texture Extract] Checking material:`, mat.name, 'has map:', !!mat.map);
       const textureSlots = [
         { key: 'map',          label: 'diffuse' },
         { key: 'normalMap',    label: 'normal' },
@@ -40,16 +39,14 @@ export async function extractTexturesFromModel(model, THREE) {
 
       textureSlots.forEach(slot => {
         const texture = mat[slot.key];
-        if (!texture) { console.log(`[Texture Extract] No ${slot.key} texture found`); return; }
+        if (!texture) { return; }
         // Skip duplicate AO from packed MR texture
         if (slot.label === 'ao' && aoSharedWithMR) {
-          console.log('[Texture Extract] aoMap uuid === roughnessMap uuid (MR packed shared), SKIP AO extract');
           return;
         }
         const compositeKey = `${texture.uuid}__${slot.label}`;
         if (textureMap.has(compositeKey)) return;
         const channel = slotChannelMap[slot.label];
-        console.log(`[Texture Extract] Found ${slot.key}: uuid=${texture.uuid} splitChannel=${channel || 'FULL'}`);
         texturePromises.push((async () => {
           try {
             const textureData = await extractTextureData(texture, THREE, channel);
@@ -69,7 +66,6 @@ export async function extractTexturesFromModel(model, THREE) {
                 threeTextureRef: texture
               });
               textureCounter++;
-              console.log(`[Texture Extract] ${slot.label} OK size=${textureData.length} key=${compositeKey}`);
             }
           } catch (e) { console.warn(`[Texture Extract] ${slot.label} FAILED:`, e); }
         })());
@@ -78,7 +74,6 @@ export async function extractTexturesFromModel(model, THREE) {
   });
 
   await Promise.all(texturePromises);
-  console.log(`[Texture Extract] Total textures extracted: ${textureMap.size}`);
   return textureMap;
 }
 
@@ -106,10 +101,8 @@ function _canvasToPngBytes(canvas, ctx, splitChannel) {
 
 function extractTextureData(texture, THREE, splitChannel = null) {
   try {
-    console.log('[Texture Extract] extractTextureData uuid:', texture.uuid, 'splitChannel:', splitChannel);
     const image = texture.image;
     if (!image) { console.warn('[Texture Extract] No texture.image'); return null; }
-    console.log('[Texture Extract] Image type:', image.constructor.name, image.width, 'x', image.height);
     const canvas = document.createElement('canvas');
     const w = canvas.width  = image.width  || image.videoWidth  || 512;
     const h = canvas.height = image.height || image.videoHeight || 512;
@@ -127,7 +120,6 @@ function extractTextureData(texture, THREE, splitChannel = null) {
     if (_drawDirect()) return _canvasToPngBytes(canvas, ctx, splitChannel);
 
     if (image && image.src) {
-      console.log('[Texture Extract] Fallback via image.src');
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.src = image.src;
@@ -145,8 +137,6 @@ function extractTextureData(texture, THREE, splitChannel = null) {
 export async function exportFBXFromModel(model, THREE, textureMap, options = {}) {
   const { highPrecision = true, embedTextures = true, preserveVertexColors = true, flipUV = true } = options;
   
-  console.log('[FBX from Three] Starting FBX export from Three.js model');
-  
   const root = new FbxNode('');
   let _id = 100000;
   const uid = () => ++_id;
@@ -163,7 +153,6 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
   let materialCounter = 0;
 
   model.traverse(node => {
-    console.log('[FBX from Three] Traversing node:', node.name, 'type:', node.type, 'isMesh:', node.isMesh, 'hasGeometry:', !!node.geometry);
     if (!node.isMesh || !node.geometry) return;
     
     const materials = Array.isArray(node.material) ? node.material : [node.material];
@@ -185,11 +174,9 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
         material: mat,
         worldMatrix: node.matrixWorld.clone()
       });
-      console.log('[FBX from Three] Added mesh:', node.name, 'vertices:', node.geometry.attributes.position?.count);
     });
   });
 
-  console.log(`[FBX from Three] Found ${meshItems.length} meshes, ${materialMap.size} materials`);
 
   const meshCount = meshItems.length;
   const materialCount = materialMap.size;
@@ -244,7 +231,6 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
   }
 
   // Build connections
-  console.log('[FBX from Three] Building connections...');
   let connectionCount = 0;
   
   meshItems.forEach((meshItem, idx) => {
@@ -265,10 +251,8 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
       cx.addInt64(matId);
       cx.addInt64(meshIds[idx]);
       connectionCount++;
-      console.log(`[FBX from Three] Connected material ${matId} to mesh ${meshIds[idx]}`);
     } else {
       console.warn(`[FBX from Three] No material ID found for mesh ${idx}, using default material`);
-      // Create a default material if none exists
       const defaultMatId = uid();
       const defaultMat = objects.child('Material');
       defaultMat.addInt64(defaultMatId);
@@ -290,7 +274,6 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
       cx.addInt64(defaultMatId);
       cx.addInt64(meshIds[idx]);
       connectionCount++;
-      console.log(`[FBX from Three] Connected default material ${defaultMatId} to mesh ${meshIds[idx]}`);
     }
     
     // Textures -> Materials, dùng FBX PBR channel chuẩn và composite key lookup
@@ -313,7 +296,6 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
         if (vidId && texId) {
           connectTexture(connections, vidId, texId, matId, slot.fbxChannel);
           connectionCount++;
-          console.log(`[FBX from Three] Tex ${slot.label} -> ${slot.fbxChannel} on mat ${matId} [${compositeKey}]`);
         } else {
           console.warn(`[FBX from Three] No tex/vid for slot ${slot.label} key ${compositeKey}`);
         }
@@ -330,18 +312,13 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
     if (geoId) {
       const cx2 = connections.child('C');
       cx2.addString('OO'); cx2.addInt64(geoId); cx2.addInt64(meshId); connectionCount++;
-      console.log(`[FBX from Three] Connected geo ${geoId} -> model ${meshId}`);
     }
   });
 
-  console.log(`[FBX from Three] Total connections built: ${connectionCount}`);
 
-  console.log('[FBX from Three] FBX construction complete, serializing...');
   
   const fbxBuffer = serializeFbx(root);
-  
-  console.log('[FBX from Three] FBX buffer size:', fbxBuffer.byteLength, 'bytes');
-  
+    
   return { 
     blob: new Blob([fbxBuffer], { type: 'application/octet-stream' }), 
     filename: 'trellis2-model.fbx' 
@@ -376,7 +353,6 @@ function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision, flipUV
   const index = geometry.index;
   const triangleCount = index ? index.count / 3 : vertexCount / 3;
   const polyVertexCount = triangleCount * 3;
-  console.log(`[FBX from Three] Building mesh ${meshItem.name}: source=${vertexCount} verts, ${triangleCount} tris -> EXPLODE to ${polyVertexCount} unique poly-corners (non-indexed safe layout)`);
 
   // --- Fetch indices once --- //
   const srcIndex = (pv) => index ? index.getX(pv) : pv;
@@ -440,7 +416,6 @@ function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision, flipUV
     }
   }
 
-  console.log(`[FBX from Three] Polygon indices: ${polyIndices.length} elements (${triangleCount} tris)`);
 
   // Build geometry node
   const geo = objects.child('Geometry');
@@ -540,7 +515,6 @@ function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision, flipUV
   model.child('Shading').addString('Y');
   // Culling mode is also set by material TwoSided; redundant hard CullingOff here keeps imports sane.
 
-  console.log(`[FBX from Three] Mesh ${meshItem.name} OK: meshId=${meshId} geoId=${geoId}`);
   return { meshId, geoId };
 }
 
@@ -572,7 +546,6 @@ function buildMaterialFromThree(objects, uid, material, name) {
   const finalSpecG = dielectricSpecG * (1 - metalness) + baseG * metalness;
   const finalSpecB = dielectricSpecB * (1 - metalness) + baseB * metalness;
 
-  console.log(`[FBX from Three] PBR material ${name}: base=(${baseR.toFixed(2)},${baseG.toFixed(2)},${baseB.toFixed(2)}) rough=${roughness.toFixed(3)} metal=${metalness.toFixed(3)} opa=${opacity.toFixed(3)}`);
 
   const mat = objects.child('Material');
   mat.addInt64(matId);
@@ -661,12 +634,10 @@ function buildMaterialFromThree(objects, uid, material, name) {
   p70(mpp, 'OpacityWeight',             'double',  'Number',     'AU', 1.0);
   if (doubleSided) p70(mpp, 'TwoSided', 'bool',    '',           'A',  1);
 
-  console.log(`[FBX from Three] PBR material ${name} OK matId=${matId} (ShadingModel=PBR, Workflow=MetalRough, SpecF0=(0.04 mix base), weight factors all=1.0)`);
   return matId;
 }
 
 function buildVideoFromTexture(objects, uid, vidId, texData) {
-  console.log('[FBX from Three] Building video for texture:', texData.name, 'label:', texData.label, 'data size:', texData.data.length, 'bytes');
   
   const vn = objects.child('Video');
   vn.addInt64(vidId);
@@ -680,7 +651,6 @@ function buildVideoFromTexture(objects, uid, vidId, texData) {
   vn.child('RelativeFilename').addString(texData.name + '.png');
   vn.child('Content').addBytes(texData.data);
   
-  console.log('[FBX from Three] Video node built for:', texData.name, 'vidId:', vidId);
 }
 
 function buildTextureNode(objects, uid, texId, texData) {
@@ -820,7 +790,6 @@ function buildDefinitions(root, meshCount, materialCount, textureCount, videoCou
 
 function serializeFbx(root) {
   try {
-    console.log('[FBX Serializer] Starting FBX serialization');
     
     const bw = new ByteWriter();
     bw.write(HEAD_MAGIC);
@@ -846,7 +815,6 @@ function serializeFbx(root) {
     bw.write(new Uint8Array(120));
     bw.write(new Uint8Array([0xf8,0x5a,0x8c,0x6a,0xde,0xf5,0xd9,0x7e,0xec,0xe9,0x0c,0xe3,0x75,0x8f,0x29,0x0b]));
 
-    console.log('[FBX Serializer] Serialization complete, buffer size:', bw.tell());
     
     return bw.toBuffer();
   } catch (error) {
@@ -860,7 +828,6 @@ function sanitize(n) {
 }
 
 export function downloadBlob(blob, filename) {
-  console.log('[Download] Starting download for:', filename, 'size:', blob.size, 'bytes, type:', blob.type);
   
   const url = URL.createObjectURL(blob);
   const a   = document.createElement('a');
@@ -871,7 +838,6 @@ export function downloadBlob(blob, filename) {
   a.click(); 
   a.remove();
   
-  console.log('[Download] Download initiated for:', filename);
   
   setTimeout(() => URL.revokeObjectURL(url), 15000);
 }
