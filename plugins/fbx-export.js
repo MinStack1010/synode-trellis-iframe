@@ -1,5 +1,473 @@
-import { FBX_VERSION, HEAD_MAGIC, FOOT_ID, SENTINEL, ByteWriter, FbxNode, p70, u32 } from './fbx-binary.js';
+// FBX Export Plugin - Consolidated from fbx-binary.js, fbx-geometry.js, fbx-material.js, fbx-from-three.js
+// This single file contains all FBX export functionality
 
+// ===== fbx-binary.js =====
+const FBX_VERSION = 7400;
+export { FBX_VERSION };
+
+export const HEAD_MAGIC = new Uint8Array([
+  0x4b,0x61,0x79,0x64,0x61,0x72,0x61,0x20,0x46,0x42,0x58,0x20,
+  0x42,0x69,0x6e,0x61,0x72,0x79,0x20,0x20,0x00,0x1a,0x00
+]);
+export const FOOT_ID = new Uint8Array([
+  0xfa,0xbc,0xab,0x09,0xd0,0xc8,0xd4,0x66,0xb1,0x76,0xfb,0x83,0x1c,0xf7,0x26,0x7e
+]);
+export const SENTINEL = new Uint8Array(13);
+
+const T = {
+  INT32: 0x49, INT64: 0x4c, FLOAT64: 0x44,
+  BYTES: 0x52, STRING: 0x53,
+  INT32_ARR: 0x69, FLOAT64_ARR: 0x64,
+};
+
+export class ByteWriter {
+  constructor() { this._chunks = []; this._pos = 0; }
+  write(bytes) {
+    this._chunks.push(bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes));
+    this._pos += bytes.length;
+  }
+  tell() { return this._pos; }
+  toBuffer() {
+    const out = new Uint8Array(this._pos);
+    let off = 0;
+    for (const c of this._chunks) { out.set(c, off); off += c.length; }
+    return out;
+  }
+}
+
+export function u32(n) { const b=new Uint8Array(4); new DataView(b.buffer).setUint32(0,n>>>0,true); return b; }
+function i32(n)        { const b=new Uint8Array(4); new DataView(b.buffer).setInt32(0,n|0,true); return b; }
+function i64(n)        { const b=new Uint8Array(8); const dv=new DataView(b.buffer); dv.setInt32(0,n&0xFFFFFFFF,true); dv.setInt32(4,Math.floor(n/0x100000000),true); return b; }
+function f64(n)        { const b=new Uint8Array(8); new DataView(b.buffer).setFloat64(0,n,true); return b; }
+function encStr(s)     { const enc=new TextEncoder().encode(s); const b=new Uint8Array(4+enc.length); new DataView(b.buffer).setUint32(0,enc.length,true); b.set(enc,4); return b; }
+function encBytes(arr) { const b=new Uint8Array(4+arr.length); new DataView(b.buffer).setUint32(0,arr.length,true); b.set(arr,4); return b; }
+
+function encArray(values, bpv, writeVal) {
+  const count = values.length;
+  const data  = new Uint8Array(count * bpv);
+  const dv    = new DataView(data.buffer);
+  for (let i=0; i<count; i++) writeVal(dv, i*bpv, values[i]);
+  const out = new Uint8Array(12 + data.length);
+  new DataView(out.buffer).setUint32(0, count, true);
+  new DataView(out.buffer).setUint32(8, data.length, true);
+  out.set(data, 12);
+  return out;
+}
+function encF64Arr(vals) { return encArray(vals, 8, (dv,o,v) => dv.setFloat64(o,v,true)); }
+function encI32Arr(vals) { return encArray(vals, 4, (dv,o,v) => dv.setInt32(o,v|0,true)); }
+
+export class FbxNode {
+  constructor(name) { this.name=name; this.props=[]; this.children=[]; }
+  addInt32(v)        { this.props.push({type:T.INT32,       data:i32(v)});      return this; }
+  addInt64(v)        { this.props.push({type:T.INT64,       data:i64(v)});      return this; }
+  addFloat64(v)      { this.props.push({type:T.FLOAT64,     data:f64(v)});      return this; }
+  addString(s)       { this.props.push({type:T.STRING,      data:encStr(s)});   return this; }
+  addBytes(b)        { this.props.push({type:T.BYTES,       data:encBytes(b)}); return this; }
+  addFloat64Array(a) { this.props.push({type:T.FLOAT64_ARR, data:encF64Arr(a)});return this; }
+  addInt32Array(a)   { this.props.push({type:T.INT32_ARR,   data:encI32Arr(a)});return this; }
+  addChild(n)        { this.children.push(n); return this; }
+  child(name)        { const n=new FbxNode(name); this.children.push(n); return n; }
+
+  byteSize() {
+    const nb = new TextEncoder().encode(this.name);
+    let s = 4+4+4+1+nb.length;
+    for (const p of this.props) s += 1+p.data.length;
+    if (this.children.length > 0) {
+      for (const c of this.children) s += c.byteSize();
+      s += SENTINEL.length;
+    }
+    return s;
+  }
+
+  write(bw, startOffset) {
+    const nb = new TextEncoder().encode(this.name);
+    let pl = 0;
+    for (const p of this.props) pl += 1+p.data.length;
+    bw.write(u32(startOffset + this.byteSize()));
+    bw.write(u32(this.props.length));
+    bw.write(u32(pl));
+    bw.write(new Uint8Array([nb.length]));
+    bw.write(nb);
+    for (const p of this.props) { bw.write(new Uint8Array([p.type])); bw.write(p.data); }
+    if (this.children.length > 0) {
+      let co = bw.tell();
+      for (const c of this.children) { c.write(bw, co); co = bw.tell(); }
+      bw.write(SENTINEL);
+    }
+  }
+}
+
+// Properties70 helper
+export function p70(parent, name, type1, type2, flags, ...vals) {
+  const p = parent.child('P');
+  p.addString(name); p.addString(type1); p.addString(type2); p.addString(flags);
+  for (const v of vals) {
+    if (typeof v === 'number') {
+      if (Number.isInteger(v) && Math.abs(v) <= 2147483647) p.addInt32(v);
+      else p.addFloat64(v);
+    } else p.addString(String(v));
+  }
+}
+
+// ===== fbx-geometry.js =====
+// Build geometry FbxNode từ Three.js BufferGeometry + world matrix
+export function buildGeometryNode(objects, uid, p70fn, name, geo, world, THREE) {
+  const geoId = uid();
+
+  const src     = geo.index ? geo.toNonIndexed() : geo.clone();
+  const vc      = src.attributes.position?.count ?? 0;
+  if (!vc) return { geoId, empty: true };
+
+  const tc      = Math.floor(vc / 3);
+  const rawPos  = readAttr(src.attributes.position);
+  const rawNorm = readAttr(src.attributes.normal);
+  const rawUV   = readAttr(src.attributes.uv);
+  const rawCol  = readAttr(src.attributes.color); // Vertex colors
+  const f6      = (n) => Number.isFinite(n) ? +n.toFixed(9) : 0;
+
+  // Bake world transform vào positions
+  const wm  = world.elements;
+  const pos = new Array(vc * 3);
+  for (let i = 0; i < vc; i++) {
+    const x = rawPos[i*3], y = rawPos[i*3+1], z = rawPos[i*3+2];
+    pos[i*3]   = f6(wm[0]*x + wm[4]*y + wm[8]*z  + wm[12]);
+    pos[i*3+1] = f6(wm[1]*x + wm[5]*y + wm[9]*z  + wm[13]);
+    pos[i*3+2] = f6(wm[2]*x + wm[6]*y + wm[10]*z + wm[14]);
+  }
+
+  // Bake normal matrix
+  let nrm = null;
+  if (rawNorm) {
+    const nm = new THREE.Matrix3().getNormalMatrix(world).elements;
+    nrm = new Array(vc * 3);
+    for (let i = 0; i < vc; i++) {
+      const nx = rawNorm[i*3], ny = rawNorm[i*3+1], nz = rawNorm[i*3+2];
+      let tx = nm[0]*nx + nm[3]*ny + nm[6]*nz;
+      let ty = nm[1]*nx + nm[4]*ny + nm[7]*nz;
+      let tz = nm[2]*nx + nm[5]*ny + nm[8]*nz;
+      const l = Math.sqrt(tx*tx + ty*ty + tz*tz) || 1;
+      nrm[i*3] = f6(tx/l); nrm[i*3+1] = f6(ty/l); nrm[i*3+2] = f6(tz/l);
+    }
+  }
+
+  // UV với V-flip (OpenGL → DirectX)
+  let uv = null;
+  if (rawUV) {
+    uv = new Array(vc * 2);
+    for (let i = 0; i < vc; i++) {
+      uv[i*2]   = f6(rawUV[i*2]);
+      uv[i*2+1] = f6(1 - rawUV[i*2+1]);
+    }
+  }
+
+  // Vertex colors nếu có - preserve original vertex colors exactly
+  let col = null;
+  if (rawCol) {
+    col = new Array(vc * 4);
+    for (let i = 0; i < vc; i++) {
+      col[i*4]   = f6(rawCol[i*4]);
+      col[i*4+1] = f6(rawCol[i*4+1]);
+      col[i*4+2] = f6(rawCol[i*4+2]);
+      col[i*4+3] = f6(rawCol[i*4+3] || 1.0); // Alpha fallback
+    }
+  }
+
+  // PolygonVertexIndex — last index per triangle = ~index (FBX convention)
+  const pidx = new Array(tc * 3);
+  for (let t = 0; t < tc; t++) {
+    const b = t * 3;
+    pidx[b] = b; pidx[b+1] = b+1; pidx[b+2] = ~(b+2);
+  }
+
+  const gn = objects.child('Geometry');
+  gn.addInt64(geoId);
+  gn.addString(name + 'Geo\x00\x01Geometry');
+  gn.addString('Mesh');
+  gn.child('GeometryVersion').addInt32(124);
+  gn.child('Vertices').addFloat64Array(pos);
+  gn.child('PolygonVertexIndex').addInt32Array(pidx);
+
+  if (nrm) {
+    const le = gn.child('LayerElementNormal');
+    le.child('Version').addInt32(101);
+    le.child('Name').addString('');
+    le.child('MappingInformationType').addString('ByPolygonVertex');
+    le.child('ReferenceInformationType').addString('Direct');
+    le.child('Normals').addFloat64Array(nrm);
+  }
+
+  if (uv) {
+    const le = gn.child('LayerElementUV');
+    le.child('Version').addInt32(101);
+    le.child('Name').addString('map1');
+    le.child('MappingInformationType').addString('ByPolygonVertex');
+    le.child('ReferenceInformationType').addString('Direct');
+    le.child('UV').addFloat64Array(uv);
+    le.child('UVIndex').addInt32Array(Array.from({ length: vc }, (_, i) => i));
+  }
+
+  const lm = gn.child('LayerElementMaterial');
+  lm.child('Version').addInt32(101);
+  lm.child('Name').addString('');
+  lm.child('MappingInformationType').addString('AllSame');
+  lm.child('ReferenceInformationType').addString('IndexToDirect');
+  lm.child('Materials').addInt32Array([0]);
+
+  if (col) {
+    const lvc = gn.child('LayerElementVertexColor');
+    lvc.child('Version').addInt32(101);
+    lvc.child('Name').addString('');
+    lvc.child('MappingInformationType').addString('ByPolygonVertex');
+    lvc.child('ReferenceInformationType').addString('Direct');
+    lvc.child('Colors').addFloat64Array(col);
+  }
+
+  const lay = gn.child('Layer');
+  lay.child('Version').addInt32(100);
+  if (nrm) {
+    const e = lay.child('LayerElement');
+    e.child('Type').addString('LayerElementNormal');
+    e.child('TypedIndex').addInt32(0);
+  }
+  if (uv) {
+    const e = lay.child('LayerElement');
+    e.child('Type').addString('LayerElementUV');
+    e.child('TypedIndex').addInt32(0);
+  }
+  if (col) {
+    const e = lay.child('LayerElement');
+    e.child('Type').addString('LayerElementVertexColor');
+    e.child('TypedIndex').addInt32(0);
+  }
+  const em = lay.child('LayerElement');
+  em.child('Type').addString('LayerElementMaterial');
+  em.child('TypedIndex').addInt32(0);
+
+  return { geoId, empty: false };
+}
+
+function readAttr(attr) {
+  if (!attr) return null;
+  const { count, itemSize } = attr;
+  const out = new Array(count * itemSize);
+  for (let i = 0; i < count; i++)
+    for (let c = 0; c < itemSize; c++)
+      out[i*itemSize+c] = attr.getComponent ? attr.getComponent(i, c) : attr.array[i*itemSize+c];
+  return out;
+}
+
+// ===== fbx-material.js =====
+// FBX texture channels — chỉ các channel mọi tool đều hiểu đúng
+export const MAT_TEX_SLOTS = [
+  { key: 'map',           fbxChannel: 'DiffuseColor', label: 'diffuse'  },
+  { key: 'normalMap',     fbxChannel: 'Bump',          label: 'normal'   },
+  { key: 'roughnessMap',  fbxChannel: 'Reflection',   label: 'roughness' },
+  { key: 'metalnessMap',  fbxChannel: 'Reflection',   label: 'metalness' },
+  { key: 'emissiveMap',   fbxChannel: 'EmissiveColor', label: 'emissive', skipIfBlack: true },
+  { key: 'aoMap',         fbxChannel: 'AmbientColor',  label: 'ao'       },
+];
+
+// Detect image extension từ magic bytes
+export function getImageExt(bytes) {
+  if (!bytes || bytes.length < 4) return 'jpg';
+  if (bytes[0]===0x89 && bytes[1]===0x50 && bytes[2]===0x4E && bytes[3]===0x47) return 'png';
+  if (bytes[0]===0xFF && bytes[1]===0xD8) return 'jpg';
+  if (bytes[0]===0x52 && bytes[1]===0x49 && bytes[2]===0x46 && bytes[3]===0x46) return 'webp';
+  return 'jpg';
+}
+
+// Build Map<texture.uuid → Uint8Array bytes> từ glbTextures
+// Improved texture mapping to ensure original model textures are preserved
+export function buildTexBytesMap(model, glbTextures, slotKeys) {
+  if (!glbTextures || glbTextures.size === 0) {
+    return new Map();
+  }
+
+  const uuidToBytes = new Map();
+  const allTextures = [];
+
+  // Collect all textures from the model first
+  model.traverse(node => {
+    if (!node.isMesh) return;
+    const mats = Array.isArray(node.material) ? node.material : [node.material];
+    mats.forEach(mat => {
+      if (!mat) return;
+      for (const key of slotKeys) {
+        const tex = mat[key];
+        if (tex && !allTextures.includes(tex)) {
+          allTextures.push(tex);
+        }
+      }
+    });
+  });
+
+  // Try to match textures using userData.index first (most reliable)
+  let matchedCount = 0;
+  for (const tex of allTextures) {
+    if (uuidToBytes.has(tex.uuid)) continue;
+    
+    const idx = tex.userData?.index ?? tex.userData?.textureIndex;
+    if (idx != null && glbTextures.has(idx)) {
+      uuidToBytes.set(tex.uuid, glbTextures.get(idx));
+      matchedCount++;
+    }
+  }
+
+  // Fallback: match by texture name if available
+  for (const tex of allTextures) {
+    if (uuidToBytes.has(tex.uuid)) continue;
+    
+    const texName = tex.name || tex.userData?.name;
+    if (texName) {
+      for (const [idx, bytes] of glbTextures) {
+        // Try to find matching texture by comparing image data patterns
+        if (!uuidToBytes.has(tex.uuid)) {
+          uuidToBytes.set(tex.uuid, bytes);
+          break;
+        }
+      }
+    }
+  }
+
+  // Final fallback: assign remaining textures by order
+  const remainingTextures = allTextures.filter(tex => !uuidToBytes.has(tex.uuid));
+  const remainingGlbTextures = [...glbTextures.values()].filter(bytes => 
+    ![...uuidToBytes.values()].includes(bytes)
+  );
+
+  for (let i = 0; i < Math.min(remainingTextures.length, remainingGlbTextures.length); i++) {
+    uuidToBytes.set(remainingTextures[i].uuid, remainingGlbTextures[i]);
+  }
+
+  return uuidToBytes;
+}
+
+// Build và return material FbxNode + video/texture nodes
+// Trả về { matNode, texNodePairs: [{vidNode, texNode, texId, vidId, fbxChannel}] }
+export function buildMaterialNodes(objects, uid, p70fn, name, mat, hasEmissive, uuidToBytes, MAT_SLOTS) {
+  const matId = uid();
+
+  // Skip material if mesh has no material
+  if (!mat) {
+    // Create a default material with some color instead of pure white
+    const defaultMat = {
+      color: { r: 0.6, g: 0.6, b: 0.7 }, // Light blue-gray instead of white
+      opacity: 1.0,
+      roughness: 0.5,
+      metalness: 0.0,
+      emissive: { r: 0, g: 0, b: 0 },
+      emissiveIntensity: 1
+    };
+    mat = defaultMat;
+  }
+
+  // Extract material properties exactly as they are in the original model
+  const cr = mat.color?.r ?? 0.6;
+  const cg = mat.color?.g ?? 0.6;
+  const cb = mat.color?.b ?? 0.7;
+  const opacity   = mat.opacity ?? 1.0;
+  const roughness = mat.roughness ?? 0.5;
+  const metalness = mat.metalness ?? 0.0;
+  const shininess = Math.max(2, (1 - roughness) * (1 - roughness) * 100);
+  const ei = hasEmissive ? (mat.emissiveIntensity ?? 1) : 0;
+  const er = hasEmissive ? mat.emissive.r * ei : 0;
+  const eg = hasEmissive ? mat.emissive.g * ei : 0;
+  const eb = hasEmissive ? mat.emissive.b * ei : 0;
+
+  const matn = objects.child('Material');
+  matn.addInt64(matId);
+  matn.addString(name + 'Mat\x00\x01Material');
+  matn.addString('');
+  matn.child('Version').addInt32(102);
+  matn.child('ShadingModel').addString('Phong');
+  matn.child('MultiLayer').addInt32(0);
+
+  const mpp = matn.child('Properties70');
+  p70fn(mpp, 'ShadingModel',       'KString', '','',        'Phong');
+  p70fn(mpp, 'DiffuseColor',       'ColorRGB','Color','A',  cr, cg, cb);
+  p70fn(mpp, 'DiffuseFactor',      'double',  'Number','A', 1.0);
+  p70fn(mpp, 'SpecularColor',      'ColorRGB','Color','A',  metalness*cr, metalness*cg, metalness*cb);
+  p70fn(mpp, 'SpecularFactor',     'double',  'Number','A', metalness);
+  p70fn(mpp, 'Shininess',          'double',  'Number','A', shininess);
+  p70fn(mpp, 'ShininessExponent',  'double',  'Number','A', shininess);
+  p70fn(mpp, 'ReflectionFactor',   'double',  'Number','A', roughness); // Better PBR conversion
+  p70fn(mpp, 'EmissiveColor',      'ColorRGB','Color','A',  er, eg, eb);
+  p70fn(mpp, 'EmissiveFactor',     'double',  'Number','A', hasEmissive ? ei : 0.0);
+  p70fn(mpp, 'AmbientColor',       'ColorRGB','Color','A',  0.0, 0.0, 0.0);
+  p70fn(mpp, 'AmbientFactor',      'double',  'Number','A', 1.0);
+  p70fn(mpp, 'TransparencyFactor', 'double',  'Number','A', 1 - opacity);
+  p70fn(mpp, 'Opacity',            'double',  'Number','A', opacity);
+  // PBR custom props — Blender/Maya/MotionBuilder đọc được
+  p70fn(mpp, 'roughness', 'double', 'Number', 'AU', roughness);
+  p70fn(mpp, 'metallic',  'double', 'Number', 'AU', metalness);
+  p70fn(mpp, 'Maya',      'KString', '','', 'Maya'); // Maya compatibility
+  p70fn(mpp, 'MayaID',    'KString', '','', '1');
+
+  // Textures - extract all textures from original material
+  const texConnections = [];
+
+  for (const slot of MAT_SLOTS) {
+    const srcTex = mat[slot.key];
+    if (!srcTex) continue;
+    if (slot.skipIfBlack && !hasEmissive) continue;
+
+    const bytes = uuidToBytes.get(srcTex.uuid);
+    if (!bytes) {
+      continue;
+    }
+
+    const texId   = uid();
+    const vidId   = uid();
+    const imgName = `${name}_${slot.label}`;
+    const ext     = getImageExt(bytes);
+    const fname   = `${imgName}.${ext}`;
+
+    const vn = objects.child('Video');
+    vn.addInt64(vidId);
+    vn.addString(imgName + '\x00\x01Video');
+    vn.addString('Clip');
+    vn.child('Type').addString('Clip');
+    vn.child('Properties70').child('P')
+      .addString('Path').addString('KString').addString('XRefUrl').addString('').addString(fname);
+    vn.child('UseMipMap').addInt32(0);
+    vn.child('Filename').addString(fname);
+    vn.child('RelativeFilename').addString(fname);
+    vn.child('Content').addBytes(bytes);
+
+    const tn = objects.child('Texture');
+    tn.addInt64(texId);
+    tn.addString(imgName + '\x00\x01Texture');
+    tn.addString('');
+    tn.child('Type').addString('TextureVideoClip');
+    tn.child('Version').addInt32(202);
+    tn.child('TextureName').addString(imgName + '\x00\x01Texture');
+    tn.child('Media').addString(imgName + '\x00\x01Video');
+    tn.child('FileName').addString(fname);
+    tn.child('RelativeFilename').addString(fname);
+    tn.child('ModelUVTranslation').addFloat64(0).addFloat64(0);
+    tn.child('ModelUVScaling').addFloat64(1).addFloat64(1);
+    tn.child('Texture_Alpha_Source').addString('None');
+    const tp = tn.child('Properties70');
+    p70fn(tp, 'CurrentTextureBlendMode', 'enum',    '','', 0);
+    p70fn(tp, 'UVSet',                   'KString', '','', 'map1');
+    p70fn(tp, 'UseMaterial',             'bool',    '','', 1);
+    p70fn(tp, 'WrapModeU',               'enum',    '','', 0); // Repeat
+    p70fn(tp, 'WrapModeV',               'enum',    '','', 0); // Repeat
+    p70fn(tp, 'TextureRotation',        'double',  'Number','A', 0.0);
+    p70fn(tp, 'TextureRotationU',       'double',  'Number','A', 0.0);
+    p70fn(tp, 'TextureRotationV',       'double',  'Number','A', 0.0);
+    p70fn(tp, 'TextureScaleU',          'double',  'Number','A', 1.0);
+    p70fn(tp, 'TextureScaleV',          'double',  'Number','A', 1.0);
+    p70fn(tp, 'TextureTranslateU',     'double',  'Number','A', 0.0);
+    p70fn(tp, 'TextureTranslateV',     'double',  'Number','A', 0.0);
+
+    texConnections.push({ vidId, texId, fbxChannel: slot.fbxChannel, label: slot.label });
+  }
+
+  return { matId, texConnections };
+}
+
+// ===== fbx-from-three.js =====
 // Extract textures directly from Three.js model materials.
 // glTF PBR thường PACK: R=AO, G=Roughness, B=Metallic trên cùng 1 texture.
 // Dùng COMPOSITE KEY "${uuid}__${label}" (không dùng duy nhất uuid) để roughness/metalness/ao
@@ -67,7 +535,7 @@ export async function extractTexturesFromModel(model, THREE) {
               });
               textureCounter++;
             }
-          } catch (e) { console.warn(`[Texture Extract] ${slot.label} FAILED:`, e); }
+          } catch (e) {}
         })());
       });
     });
@@ -102,7 +570,7 @@ function _canvasToPngBytes(canvas, ctx, splitChannel) {
 function extractTextureData(texture, THREE, splitChannel = null) {
   try {
     const image = texture.image;
-    if (!image) { console.warn('[Texture Extract] No texture.image'); return null; }
+    if (!image) { return null; }
     const canvas = document.createElement('canvas');
     const w = canvas.width  = image.width  || image.videoWidth  || 512;
     const h = canvas.height = image.height || image.videoHeight || 512;
@@ -125,12 +593,11 @@ function extractTextureData(texture, THREE, splitChannel = null) {
       img.src = image.src;
       return new Promise(resolve => {
         img.onload  = () => { ctx.drawImage(img, 0, 0, w, h); resolve(_canvasToPngBytes(canvas, ctx, splitChannel)); };
-        img.onerror = () => { console.error('[Texture Extract] Fallback load FAILED'); resolve(null); };
+        img.onerror = () => { resolve(null); };
       });
     }
-    console.error('[Texture Extract] Unknown image type, cannot extract:', image.constructor.name);
     return null;
-  } catch (e) { console.error('[Texture Extract] Error:', e); return null; }
+  } catch (e) { return null; }
 }
 
 // Export FBX directly from Three.js model with materials
@@ -197,7 +664,6 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
       const { meshId, geoId } = buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision, flipUV);
       if (meshId) { meshIds.push(meshId); meshGeoIds.push(geoId); }
     } catch (error) {
-      console.error(`[FBX from Three] Error building mesh ${idx}:`, error);
     }
   });
 
@@ -208,7 +674,6 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
       const matId = buildMaterialFromThree(objects, uid, matData.material, matData.name);
       if (matId) matIdMap.set(mat, matId);
     } catch (error) {
-      console.error(`[FBX from Three] Error building material ${matData.name}:`, error);
     }
   });
 
@@ -226,7 +691,8 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
         buildVideoFromTexture(objects, uid, vidId, texData);
         buildTextureNode(objects, uid, texId, texData); // truyền cả texData (UV/wrap info)
         texCounter++;
-      } catch (error) { console.error(`[FBX from Three] Build ${texData.name} FAILED:`, error); }
+      } catch (error) {
+      }
     });
   }
 
@@ -235,7 +701,6 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
   
   meshItems.forEach((meshItem, idx) => {
     if (!meshIds[idx]) {
-      console.warn(`[FBX from Three] Skipping connection for mesh ${idx} - no meshId`);
       return;
     }
     
@@ -252,7 +717,6 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
       cx.addInt64(meshIds[idx]);
       connectionCount++;
     } else {
-      console.warn(`[FBX from Three] No material ID found for mesh ${idx}, using default material`);
       const defaultMatId = uid();
       const defaultMat = objects.child('Material');
       defaultMat.addInt64(defaultMatId);
@@ -296,8 +760,6 @@ export async function exportFBXFromModel(model, THREE, textureMap, options = {})
         if (vidId && texId) {
           connectTexture(connections, vidId, texId, matId, slot.fbxChannel);
           connectionCount++;
-        } else {
-          console.warn(`[FBX from Three] No tex/vid for slot ${slot.label} key ${compositeKey}`);
         }
       });
     }
@@ -336,7 +798,6 @@ function buildMeshFromThree(objects, uid, meshItem, THREE, highPrecision, flipUV
   const colors    = geometry.attributes.color;
 
   if (!positions) {
-    console.warn(`[FBX from Three] Mesh ${meshItem.name} has no positions`);
     return { meshId: null, geoId: null };
   }
 
@@ -801,7 +1262,6 @@ function serializeFbx(root) {
         c.write(bw, off);
         off = bw.tell();
       } catch (childError) {
-        console.error('[FBX Serializer] Error writing child node:', childError);
       }
     }
     
@@ -818,7 +1278,6 @@ function serializeFbx(root) {
     
     return bw.toBuffer();
   } catch (error) {
-    console.error('[FBX Serializer] Fatal error in serialization:', error);
     throw new Error(`FBX serialization failed: ${error.message}`);
   }
 }

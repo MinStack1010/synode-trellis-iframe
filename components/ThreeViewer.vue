@@ -146,24 +146,6 @@ export default {
 				this.clearModel();
 				this.model = gltf.scene;
 				
-				// Debug materials in loaded model
-				console.log('[ThreeViewer] Model loaded, checking materials...');
-				this.model.traverse(node => {
-					if (node.isMesh) {
-						console.log('[ThreeViewer] Mesh:', node.name, 'has material:', !!node.material);
-						if (node.material) {
-							console.log('[ThreeViewer] Material type:', node.material.type);
-							console.log('[ThreeViewer] Material color:', node.material.color);
-							console.log('[ThreeViewer] Material maps:', {
-								map: node.material.map,
-								normalMap: node.material.normalMap,
-								roughnessMap: node.material.roughnessMap,
-								metalnessMap: node.material.metalnessMap
-							});
-						}
-					}
-				});
-				
 				this.placeOnGround(this.model);
 				this.scene.add(this.model);
 				this.frameModel(this.model);

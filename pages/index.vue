@@ -454,7 +454,6 @@ export default {
 		const res = await fetch(this.modelUrl);
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const blob = await res.blob();
-		console.log('[GLB Download] Blob size:', blob.size, 'bytes, type:', blob.type);
 		const blobUrl = URL.createObjectURL(blob);
 		const link = document.createElement("a");
 		link.href = blobUrl;
@@ -505,34 +504,23 @@ export default {
 	  try {
 		this.showToast("Exporting...", "success");
 		
-		console.log('[FBX Export] Starting FBX export from loaded Three.js model');
-		console.log('[FBX Export] modelUrl:', this.modelUrl);
-		
 		const model  = this.$refs.previewPanel?.getModel?.();
 		const THREE  = this.$refs.previewPanel?.getThree?.();
-		
-		console.log('[FBX Export] Model from previewPanel:', model);
-		console.log('[FBX Export] THREE from previewPanel:', THREE);
 		
 		if (!model || !THREE) {
 		  throw new Error("Model not loaded for export");
 		}
 		
-		console.log('[FBX Export] Model loaded, extracting textures from Three.js materials');
-		
 		// Extract textures directly from Three.js model
-		const { extractTexturesFromModel, exportFBXFromModel, downloadBlob } = await import("~/plugins/fbx-from-three.js");
+		const { extractTexturesFromModel, exportFBXFromModel, downloadBlob } = await import("~/plugins/fbx-export.js");
 		
 		const modelTextures = await extractTexturesFromModel(model, THREE);
-		console.log('[FBX Export] Extracted', modelTextures.size, 'textures from Three.js model');
 		
 		const { blob, filename } = await exportFBXFromModel(model, THREE, modelTextures, {
 		  highPrecision: true,
 		  embedTextures: true,
 		  preserveVertexColors: true
 		});
-		
-		console.log('[FBX Export] FBX blob created, size:', blob.size, 'bytes, filename:', filename);
 		
 		downloadBlob(blob, filename);
 		

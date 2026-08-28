@@ -1,5 +1,4 @@
 export async function parseGlbTextures(glbUrl) {
-  console.log('[GLB Parser] Starting to parse GLB from URL:', glbUrl);
   const res = await fetch(glbUrl);
   if (!res.ok) throw new Error(`GLB fetch failed: ${res.status}`);
   const ab   = await res.arrayBuffer();
@@ -26,20 +25,6 @@ export async function parseGlbTextures(glbUrl) {
   const textures = json.textures || [];
   const materials = json.materials || [];
 
-  console.log('[GLB Parser] GLB structure:', { 
-    images: images.length, 
-    textures: textures.length, 
-    materials: materials.length 
-  });
-
-  // Log material info for debugging
-  if (materials.length > 0) {
-    console.log('[GLB Parser] Materials in GLB:');
-    materials.forEach((mat, idx) => {
-      console.log(`[GLB Parser] Material ${idx}:`, mat);
-    });
-  }
-
   // textureIndex → Uint8Array (raw jpeg/png bytes from GLB)
   const result = new Map();
 
@@ -54,20 +39,17 @@ export async function parseGlbTextures(glbUrl) {
     if (imgDef.bufferView != null && binChunk) {
       const bv  = json.bufferViews[imgDef.bufferView];
       bytes = new Uint8Array(binChunk, bv.byteOffset || 0, bv.byteLength);
-      console.log(`[GLB Parser] Extracted texture ${ti} from bufferView, size: ${bytes.length} bytes`);
     } else if (imgDef.uri?.startsWith('data:')) {
       const b64 = imgDef.uri.split(',')[1];
       const bin = atob(b64);
       bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      console.log(`[GLB Parser] Extracted texture ${ti} from data URI, size: ${bytes.length} bytes`);
     } else if (imgDef.uri) {
       try {
         const base   = glbUrl.substring(0, glbUrl.lastIndexOf('/') + 1);
         const imgRes = await fetch(base + imgDef.uri);
         if (imgRes.ok) {
           bytes = new Uint8Array(await imgRes.arrayBuffer());
-          console.log(`[GLB Parser] Extracted texture ${ti} from external URI, size: ${bytes.length} bytes`);
         }
       } catch (e) {
         console.warn(`[GLB Parser] Failed to load external texture ${ti}:`, e);
@@ -77,6 +59,5 @@ export async function parseGlbTextures(glbUrl) {
     if (bytes) result.set(ti, bytes);
   }
 
-  console.log(`[GLB Parser] ${result.size} texture(s) extracted from GLB`);
   return result;
 }
