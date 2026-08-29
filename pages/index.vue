@@ -201,13 +201,39 @@ export default {
 		if (check.ok) {
 		  this.modelUrl  = savedGlbUrl;
 		  this.generated = true;
+		  
+		  // Validate FBX cache for this specific GLB URL
+		  const fbxCacheKey = `trellis_fbx_${savedGlbUrl}`;
+		  const savedFbxUrl = localStorage.getItem(fbxCacheKey);
+		  if (savedFbxUrl) {
+			try {
+			  const fbxCheck = await fetch(savedFbxUrl, { method: 'HEAD' });
+			  if (!fbxCheck.ok) {
+				localStorage.removeItem(fbxCacheKey);
+			  }
+			} catch (e) {
+			  localStorage.removeItem(fbxCacheKey);
+			}
+		  }
 		} else {
 		  console.warn('[GLB URL] Saved URL is no longer valid, will regenerate');
 		  localStorage.removeItem("trellis_last_glb_url");
+		  // Clear all FBX caches since GLB is invalid
+		  Object.keys(localStorage).forEach(key => {
+			if (key.startsWith('trellis_fbx_')) {
+			  localStorage.removeItem(key);
+			}
+		  });
 		}
 	  } catch (e) {
 		console.warn('[GLB URL] Could not validate saved URL:', e);
 		localStorage.removeItem("trellis_last_glb_url");
+		// Clear all FBX caches on error
+		Object.keys(localStorage).forEach(key => {
+		  if (key.startsWith('trellis_fbx_')) {
+			localStorage.removeItem(key);
+		  }
+		});
 	  }
 	}
 
@@ -232,6 +258,9 @@ export default {
 			this.modelUrl = status.result.glb_url;
 			this.generated = true;
 			localStorage.setItem("trellis_last_glb_url", status.result.glb_url);
+			// Clear FBX cache for this specific GLB when new model is generated
+			const fbxCacheKey = `trellis_fbx_${status.result.glb_url}`;
+			localStorage.removeItem(fbxCacheKey);
 			localStorage.removeItem("trellis_active_job_id");
 			localStorage.removeItem("trellis_preview_image");
 			this._startQueuePoll();
@@ -482,14 +511,14 @@ export default {
 		return;
 	  }
 	  try {
-		this.showToast("Exporting...", "success");
+		this.showToast("Exporting to USDZ...", "success");
 		const { parseGlbTextures } = await import("~/plugins/glb-parser.js");
 		const { exportUSDZ, downloadBlob } = await import("~/plugins/usdz-exporter.js");
 		const glbTextures = await parseGlbTextures(this.modelUrl).catch(() => new Map());
 		const blob = await exportUSDZ(model, THREE, glbTextures);
 		downloadBlob(blob, "trellis2-model.usdz");
 		
-		this.showToast("Export successful", "success");
+		this.showToast("USDZ export successful", "success");
 	  } catch (err) {
 		console.error("[USDZ Export]", err);
 		this.showToast(this.$t("image3d.exportFailed"), "error");
@@ -502,31 +531,71 @@ export default {
 		return;
 	  }
 	  try {
-		this.showToast("Exporting...", "success");
+		this.showToast("Exporting to FBX...", "success");
 		
-		const model  = this.$refs.previewPanel?.getModel?.();
-		const THREE  = this.$refs.previewPanel?.getThree?.();
-		
-		if (!model || !THREE) {
-		  throw new Error("Model not loaded for export");
+		const apiUrl = (process.env.trellisApiUrl || "").replace(/\/$/, "");
+		if (!apiUrl) {
+		  throw new Error("API URL not configured");
 		}
 		
-		// Extract textures directly from Three.js model
-		const { extractTexturesFromModel, exportFBXFromModel, downloadBlob } = await import("~/plugins/fbx-export.js");
+		// Check if we have a cached FBX URL for this GLB
+		const cacheKey = `trellis_fbx_${this.modelUrl}`;
+		let fbxUrl = localStorage.getItem(cacheKey);
 		
-		const modelTextures = await extractTexturesFromModel(model, THREE);
+		// Validate cached URL
+		if (fbxUrl) {
+		  try {
+			const check = await fetch(fbxUrl, { method: 'HEAD' });
+			if (!check.ok) {
+			  localStorage.removeItem(cacheKey);
+			  fbxUrl = null;
+			}
+		  } catch (e) {
+			localStorage.removeItem(cacheKey);
+		 fbxUrl = null;
+		  }
+		}
 		
-		const { blob, filename } = await exportFBXFromModel(model, THREE, modelTextures, {
-		  highPrecision: true,
-		  embedTextures: true,
-		  preserveVertexColors: true
-		});
+		// If no valid cache, call backend API
+		if (!fbxUrl) {
+		  const response = await fetch(`${apiUrl}/export/fbx`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ glb_url: this.modelUrl }),
+		  });
+		  
+		  if (!response.ok) {
+			const error = await response.json();
+			throw new Error(error.detail || "FBX export failed");
+		  }
+		  
+		  const result = await response.json();
+		  fbxUrl = result.fbx_url;
+		  
+		  // Cache the FBX URL
+		  localStorage.setItem(cacheKey, fbxUrl);
+		}
 		
-		downloadBlob(blob, filename);
+		// Download the FBX file from the URL
+		const fbxResponse = await fetch(fbxUrl);
+		if (!fbxResponse.ok) {
+		  throw new Error(`Failed to download FBX: HTTP ${fbxResponse.status}`);
+		}
 		
-		this.showToast("Export successful", "success");
+		const blob = await fbxResponse.blob();
+		const blobUrl = URL.createObjectURL(blob);
+		const link = document.createElement("a");
+		link.href = blobUrl;
+		link.download = "trellis2-model.fbx";
+		link.style.display = "none";
+		document.body.appendChild(link);
+		link.click();
+		link.remove();
+		setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+		
+		this.showToast("FBX export successful", "success");
 	  } catch (err) {
-		console.error("[FBX Export Complete Failure]", err);
+		console.error("[FBX Export]", err);
 		this.showToast("Export failed: " + (err.message || "Unknown error"), "error");
 	  }
 	},
